@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var showZoomSlider = false
     @State private var rainbowGlowOpacity: Double = 0.3
     @State private var rainbowRotation: Double = 0.0
+    @State private var scanAreaGlowOpacity: Double = 0.3
     
     // Data detector for URLs, emails, phone numbers, and addresses
     private let dataDetector: NSDataDetector = {
@@ -75,16 +76,63 @@ struct ContentView: View {
                         )
                         .ignoresSafeArea()
                         
-                        // Subtle border around the clear scan area
+                        // Glowing border around scan area
                         VStack {
                             Spacer()
                             
-                            RoundedRectangle(cornerRadius: 20)
-                                .strokeBorder(Color.white.opacity(0.3), lineWidth: 2)
-                                .frame(
-                                    width: geometry.size.width * 0.85,
-                                    height: geometry.size.height * 0.1
-                                )
+                            ZStack {
+                                // Rainbow glow shadow - multiple layers for intensity (appears when text is detected)
+                                ForEach(0..<3) { index in
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .stroke(lineWidth: 4)
+                                        .foregroundStyle(
+                                            AngularGradient(
+                                                colors: [
+                                                    Color(red: 1.0, green: 0.5, blue: 0.5),   // Brighter red/pink
+                                                    Color(red: 1.0, green: 0.75, blue: 0.5),  // Brighter orange
+                                                    Color(red: 1.0, green: 1.0, blue: 0.5),   // Brighter yellow
+                                                    Color(red: 0.5, green: 1.0, blue: 0.5),   // Brighter green
+                                                    Color(red: 0.5, green: 0.75, blue: 1.0),  // Brighter blue
+                                                    Color(red: 0.75, green: 0.5, blue: 1.0),  // Brighter purple
+                                                    Color(red: 1.0, green: 0.5, blue: 0.5)    // Back to brighter red/pink
+                                                ],
+                                                center: .center,
+                                                angle: .degrees(rainbowRotation)
+                                            )
+                                        )
+                                        .frame(
+                                            width: geometry.size.width * 0.85,
+                                            height: geometry.size.height * 0.1
+                                        )
+                                        .blur(radius: CGFloat(8 + index * 6))
+                                        .opacity(lastDetectedItem != nil ? scanAreaGlowOpacity : 0)
+                                        .animation(.easeInOut(duration: 0.8), value: lastDetectedItem != nil)
+                                }
+                                
+                                // Subtle white glow shadow - multiple layers (always visible)
+                                ForEach(0..<2) { index in
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .stroke(lineWidth: 3)
+                                        .foregroundStyle(Color.white)
+                                        .frame(
+                                            width: geometry.size.width * 0.85,
+                                            height: geometry.size.height * 0.1
+                                        )
+                                        .blur(radius: CGFloat(6 + index * 8))
+                                        .opacity(lastDetectedItem != nil ? 0 : scanAreaGlowOpacity * 0.8)
+                                        .animation(.easeInOut(duration: 0.8), value: lastDetectedItem != nil)
+                                }
+                            }
+                            .onAppear {
+                                // Start rotation animation (shared with bottom button)
+                                withAnimation(.linear(duration: 8.0).repeatForever(autoreverses: false)) {
+                                    rainbowRotation = 360.0
+                                }
+                                // Pulsing glow animation
+                                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                                    scanAreaGlowOpacity = 0.9
+                                }
+                            }
                             
                             Spacer()
                         }
@@ -203,13 +251,13 @@ struct ContentView: View {
                                 .fill(
                                     AngularGradient(
                                         colors: [
-                                            Color(red: 1.0, green: 0.7, blue: 0.7),   // Pastel red/pink
-                                            Color(red: 1.0, green: 0.85, blue: 0.7),  // Pastel orange
-                                            Color(red: 1.0, green: 1.0, blue: 0.7),   // Pastel yellow
-                                            Color(red: 0.7, green: 1.0, blue: 0.7),   // Pastel green
-                                            Color(red: 0.7, green: 0.85, blue: 1.0),  // Pastel blue
-                                            Color(red: 0.85, green: 0.7, blue: 1.0),  // Pastel purple
-                                            Color(red: 1.0, green: 0.7, blue: 0.7)    // Back to pastel red/pink
+                                            Color(red: 1.0, green: 0.5, blue: 0.5),   // Brighter red/pink
+                                            Color(red: 1.0, green: 0.75, blue: 0.5),  // Brighter orange
+                                            Color(red: 1.0, green: 1.0, blue: 0.5),   // Brighter yellow
+                                            Color(red: 0.5, green: 1.0, blue: 0.5),   // Brighter green
+                                            Color(red: 0.5, green: 0.75, blue: 1.0),  // Brighter blue
+                                            Color(red: 0.75, green: 0.5, blue: 1.0),  // Brighter purple
+                                            Color(red: 1.0, green: 0.5, blue: 0.5)    // Back to brighter red/pink
                                         ],
                                         center: .center,
                                         angle: .degrees(rainbowRotation)
@@ -221,11 +269,9 @@ struct ContentView: View {
                                 .animation(.easeInOut(duration: 0.5), value: rainbowGlowOpacity)
                         )
                         .onAppear {
+                            // Pulsing glow for bottom button
                             withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
                                 rainbowGlowOpacity = 0.7
-                            }
-                            withAnimation(.linear(duration: 8.0).repeatForever(autoreverses: false)) {
-                                rainbowRotation = 360.0
                             }
                         }
                         .padding(.horizontal)
@@ -343,7 +389,7 @@ struct ContentView: View {
             
             if let item = detectedItem {
                 lastDetectedItem = item
-                filteredData = "\(item.type.icon) \(item.text)"
+                filteredData = item.text
                 
                 // Reset the timer
                 detectionTimer?.invalidate()
