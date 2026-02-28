@@ -6,10 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		EBC26BB02F5247CF001F8342 /* CAMERA_PERMISSION_SETUP.md in Resources */ = {isa = PBXBuildFile; fileRef = EBC26BAF2F5247CF001F8342 /* CAMERA_PERMISSION_SETUP.md */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXContainerItemProxy section */
 		EBC26B8B2F524175001F8342 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -31,7 +27,6 @@
 		EBC26B7D2F524174001F8342 /* Websight-2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Websight-2.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBC26B8A2F524175001F8342 /* Websight-2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Websight-2Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBC26B942F524175001F8342 /* Websight-2UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Websight-2UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		EBC26BAF2F5247CF001F8342 /* CAMERA_PERMISSION_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CAMERA_PERMISSION_SETUP.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -97,7 +92,6 @@
 				EBC26B8D2F524175001F8342 /* Websight-2Tests */,
 				EBC26B972F524175001F8342 /* Websight-2UITests */,
 				EBC26B7E2F524174001F8342 /* Products */,
-				EBC26BAF2F5247CF001F8342 /* CAMERA_PERMISSION_SETUP.md */,
 			);
 			sourceTree = "<group>";
 		};
@@ -231,7 +225,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				EBC26BB02F5247CF001F8342 /* CAMERA_PERMISSION_SETUP.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
