@@ -24,18 +24,18 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		EBC26B7D2F524174001F8342 /* Websight-2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Websight-2.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		EBC26B7D2F524174001F8342 /* websight.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = websight.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBC26B8A2F524175001F8342 /* Websight-2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Websight-2Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBC26B942F524175001F8342 /* Websight-2UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Websight-2UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		EBC26BB22F524816001F8342 /* Exceptions for "Websight-2" folder in "Websight-2" target */ = {
+		EBC26BB22F524816001F8342 /* Exceptions for "Websight-2" folder in "websight" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
-			target = EBC26B7C2F524174001F8342 /* Websight-2 */;
+			target = EBC26B7C2F524174001F8342 /* websight */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -43,7 +43,7 @@
 		EBC26B7F2F524174001F8342 /* Websight-2 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				EBC26BB22F524816001F8342 /* Exceptions for "Websight-2" folder in "Websight-2" target */,
+				EBC26BB22F524816001F8342 /* Exceptions for "Websight-2" folder in "websight" target */,
 			);
 			path = "Websight-2";
 			sourceTree = "<group>";
@@ -98,7 +98,7 @@
 		EBC26B7E2F524174001F8342 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				EBC26B7D2F524174001F8342 /* Websight-2.app */,
+				EBC26B7D2F524174001F8342 /* websight.app */,
 				EBC26B8A2F524175001F8342 /* Websight-2Tests.xctest */,
 				EBC26B942F524175001F8342 /* Websight-2UITests.xctest */,
 			);
@@ -108,9 +108,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		EBC26B7C2F524174001F8342 /* Websight-2 */ = {
+		EBC26B7C2F524174001F8342 /* websight */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = EBC26B9E2F524175001F8342 /* Build configuration list for PBXNativeTarget "Websight-2" */;
+			buildConfigurationList = EBC26B9E2F524175001F8342 /* Build configuration list for PBXNativeTarget "websight" */;
 			buildPhases = (
 				EBC26B792F524174001F8342 /* Sources */,
 				EBC26B7A2F524174001F8342 /* Frameworks */,
@@ -123,11 +123,11 @@
 			fileSystemSynchronizedGroups = (
 				EBC26B7F2F524174001F8342 /* Websight-2 */,
 			);
-			name = "Websight-2";
+			name = websight;
 			packageProductDependencies = (
 			);
 			productName = "Websight-2";
-			productReference = EBC26B7D2F524174001F8342 /* Websight-2.app */;
+			productReference = EBC26B7D2F524174001F8342 /* websight.app */;
 			productType = "com.apple.product-type.application";
 		};
 		EBC26B892F524175001F8342 /* Websight-2Tests */ = {
@@ -213,7 +213,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				EBC26B7C2F524174001F8342 /* Websight-2 */,
+				EBC26B7C2F524174001F8342 /* websight */,
 				EBC26B892F524175001F8342 /* Websight-2Tests */,
 				EBC26B932F524175001F8342 /* Websight-2UITests */,
 			);
@@ -271,12 +271,12 @@
 /* Begin PBXTargetDependency section */
 		EBC26B8C2F524175001F8342 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = EBC26B7C2F524174001F8342 /* Websight-2 */;
+			target = EBC26B7C2F524174001F8342 /* websight */;
 			targetProxy = EBC26B8B2F524175001F8342 /* PBXContainerItemProxy */;
 		};
 		EBC26B962F524175001F8342 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = EBC26B7C2F524174001F8342 /* Websight-2 */;
+			target = EBC26B7C2F524174001F8342 /* websight */;
 			targetProxy = EBC26B952F524175001F8342 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -579,7 +579,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		EBC26B9E2F524175001F8342 /* Build configuration list for PBXNativeTarget "Websight-2" */ = {
+		EBC26B9E2F524175001F8342 /* Build configuration list for PBXNativeTarget "websight" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EBC26B9F2F524175001F8342 /* Debug */,
