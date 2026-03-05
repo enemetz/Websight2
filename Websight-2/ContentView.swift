@@ -10,8 +10,14 @@ import AVFoundation
 import EventKit
 import EventKitUI
 import MapKit
+import SafariServices
+import MessageUI
+import CoreLocation
 
 struct ContentView: View {
+    @AppStorage("openUrlsInApp") private var openUrlsInApp: Bool = false
+    @AppStorage("openMapsInApp") private var openMapsInApp: Bool = false
+    @AppStorage("openMailInApp") private var openMailInApp: Bool = false
     @State private var detectedText: String = "Point camera at text..."
     @State private var filteredData: String = "Point camera at text..."
     @State private var lastDetectedItem: DetectedItem? = nil
@@ -26,11 +32,19 @@ struct ContentView: View {
     @State private var lastProcessedText: String = ""
     @State private var showEventEditor = false
     @State private var eventToCreate: DetectedItem? = nil
-    @State private var openMapsInApp = true // Toggle this for in-app vs external Maps
     @State private var showPill1 = false
     @State private var showPill2 = false
     @State private var showPill3 = false
     @State private var displayedItem: DetectedItem? = nil // Separate state for display
+    @State private var isSettingsVisible = false
+    @State private var showSafari = false
+    @State private var safariURL: URL?
+    @State private var showMap = false
+    @State private var mapItem: MKMapItem?
+    @State private var showMailComposer = false
+    @State private var mailRecipient: String?
+    @State private var isCameraPaused = false
+    
     
     // Data detector for URLs, emails, phone numbers, addresses, and dates
     private let dataDetector: NSDataDetector = {
@@ -63,7 +77,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             if cameraPermissionGranted {
-                CameraView(detectedText: $detectedText, scanRegion: $scanRegion, zoomLevel: $zoomLevel)
+                CameraView(detectedText: $detectedText, scanRegion: $scanRegion, zoomLevel: $zoomLevel, isPaused: isCameraPaused)
                     .edgesIgnoringSafeArea(.all)
                     .onChange(of: detectedText) { oldValue, newValue in
                         filterImportantData(from: newValue)
@@ -151,19 +165,39 @@ struct ContentView: View {
                             Spacer()
                         }
                         
-                        // Instructions in glass bubble at the top
+                        // Instructions and settings button at the top
                         VStack {
-                            Text("Align text within the frame")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .glassEffect(.regular, in: .capsule)
+                            ZStack {
+                                // Centered instruction bubble
+                                Text("Align text within the frame")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                    .glassEffect(.clear.interactive(), in: .capsule)
+                                
+                                // Settings button on the right
+                                HStack {
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        isSettingsVisible.toggle()
+                                    }) {
+                                        Image(systemName: "gearshape.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(.white)
+                                            .padding(10)
+                                    }
+                                    .glassEffect(.clear.interactive(), in: .circle)
+                                }
+                                .padding(.trailing, 20)
+                            }
                             
                             Spacer()
                         }
                         .padding(.top, 60)
+                        
                         
                         // Zoom control below scan area
                         VStack(spacing: 10) {
@@ -243,9 +277,13 @@ struct ContentView: View {
                                     // Show event editor for dates
                                     eventToCreate = item
                                     showEventEditor = true
-                                } else if item.type == .address && openMapsInApp {
-                                    // Open Maps in-app for addresses
-                                    openMapsInApp(for: item)
+                                } else if item.type == .address {
+                                    // Handle address - check if user wants in-app map
+                                    if openMapsInApp {
+                                        openMapsInAppView(for: item)
+                                    } else {
+                                        openMapsExternal(for: item)
+                                    }
                                 } else {
                                     openDetectedItem(item)
                                 }
@@ -262,7 +300,7 @@ struct ContentView: View {
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
                             }
-                            .glassEffect(.regular.interactive(), in: .capsule)
+                            .glassEffect(.clear.interactive(), in: .capsule)
                             .opacity(showPill1 ? 1 : 0)
                             .scaleEffect(showPill1 ? 1 : 0.8)
                             .animation(.easeOut(duration: 0.3), value: showPill1)
@@ -285,7 +323,7 @@ struct ContentView: View {
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
                             }
-                            .glassEffect(.regular.interactive(), in: .capsule)
+                            .glassEffect(.clear.interactive(), in: .capsule)
                             .opacity(showPill2 ? 1 : 0)
                             .scaleEffect(showPill2 ? 1 : 0.8)
                             .animation(.easeOut(duration: 0.3), value: showPill2)
@@ -306,7 +344,7 @@ struct ContentView: View {
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
                             }
-                            .glassEffect(.regular.interactive(), in: .capsule)
+                            .glassEffect(.clear.interactive(), in: .capsule)
                             .opacity(showPill3 ? 1 : 0)
                             .scaleEffect(showPill3 ? 1 : 0.8)
                             .animation(.easeOut(duration: 0.3), value: showPill3)
@@ -433,25 +471,58 @@ struct ContentView: View {
                 EventEditView(event: event, isPresented: $showEventEditor)
             }
         }
+        .onChange(of: showEventEditor) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .fullScreenCover(isPresented: $isSettingsVisible) {
+            SettingsView()
+        }
+        .onChange(of: isSettingsVisible) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .sheet(isPresented: $showSafari) {
+            if let url = safariURL {
+                SafariView(url: url)
+            }
+        }
+        .onChange(of: showSafari) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .sheet(isPresented: $showMap) {
+            if let item = mapItem {
+                MapView(mapItem: item)
+            }
+        }
+        .onChange(of: showMap) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .sheet(isPresented: $showMailComposer) {
+            if let recipient = mailRecipient {
+                MailComposerView(recipient: recipient)
+            }
+        }
+        .onChange(of: showMailComposer) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
     }
     
     private func actionText(for type: DetectedItem.DetectedType) -> String {
         switch type {
-        case .website: return "Open in Safari"
-        case .email: return "Send Email"
-        case .phone: return "Call"
-        case .address: return "Open in Maps"
-        case .date: return "Add to Calendar"
+            case .website: return "Open in Safari"
+            case .email: return "Send Email"
+            case .phone: return "Call"
+            case .address: return "Open in Maps"
+            case .date: return "Add to Calendar"
         }
     }
     
     private func actionIcon(for type: DetectedItem.DetectedType) -> String {
         switch type {
-        case .website: return "safari"
-        case .email: return "envelope"
-        case .phone: return "phone"
-        case .address: return "map"
-        case .date: return "calendar.badge.plus"
+            case .website: return "safari"
+            case .email: return "envelope"
+            case .phone: return "phone"
+            case .address: return "map"
+            case .date: return "calendar.badge.plus"
         }
     }
     
@@ -523,7 +594,13 @@ struct ContentView: View {
                 }
             case .phoneNumber:
                 if let phoneNumber = firstMatch.phoneNumber {
-                    let phoneURL = URL(string: "tel:\(phoneNumber.replacingOccurrences(of: " ", with: ""))")
+                    // Clean the phone number but preserve + for international numbers
+                    let cleanedNumber = phoneNumber
+                        .replacingOccurrences(of: " ", with: "")
+                        .replacingOccurrences(of: "(", with: "")
+                        .replacingOccurrences(of: ")", with: "")
+                        .replacingOccurrences(of: "-", with: "")
+                    let phoneURL = URL(string: "tel:\(cleanedNumber)")
                     detectedItem = DetectedItem(text: matchedText, type: .phone, url: phoneURL, date: nil, addressComponents: nil)
                 }
             case .address:
@@ -596,14 +673,57 @@ struct ContentView: View {
     private func openDetectedItem(_ item: DetectedItem) {
         guard let url = item.url else { return }
         
-        // Open the URL using UIApplication
-        if UIApplication.shared.canOpenURL(url) {
-            UIApplication.shared.open(url)
+        // Open websites in-app if user preference is enabled
+        if item.type == .website && openUrlsInApp {
+            safariURL = url
+            showSafari = true
+        } else if item.type == .email && openMailInApp {
+            // Check if device can send mail before showing composer
+            if MFMailComposeViewController.canSendMail() {
+                // Pause camera immediately
+                isCameraPaused = true
+                
+                // Extract email address from mailto: URL
+                let emailAddress = url.absoluteString.replacingOccurrences(of: "mailto:", with: "")
+                mailRecipient = emailAddress
+                showMailComposer = true
+            } else {
+                // Fall back to opening Mail app externally
+                if UIApplication.shared.canOpenURL(url) {
+                    UIApplication.shared.open(url)
+                }
+            }
+        } else {
+            // Open externally (for phone, or when preference is off)
+            if UIApplication.shared.canOpenURL(url) {
+                UIApplication.shared.open(url)
+            }
         }
     }
     
-    private func openMapsInApp(for item: DetectedItem) {
-        // Fall back to geocoding the address string since MKPlacemark needs coordinates
+    private func openMapsInAppView(for item: DetectedItem) {
+        // Geocode the address and show in-app map view
+        let geocoder = CLGeocoder()
+        geocoder.geocodeAddressString(item.text) { placemarks, error in
+            if let placemark = placemarks?.first {
+                let mkPlacemark = MKPlacemark(placemark: placemark)
+                let mkMapItem = MKMapItem(placemark: mkPlacemark)
+                mkMapItem.name = item.text
+                
+                // Show in-app map
+                mapItem = mkMapItem
+                showMap = true
+            } else {
+                // If geocoding fails, open with URL externally
+                if let url = item.url {
+                    UIApplication.shared.open(url)
+                }
+            }
+        }
+    }
+    
+    private func openMapsExternal(for item: DetectedItem) {
+        // Open in external Maps app
         let geocoder = CLGeocoder()
         geocoder.geocodeAddressString(item.text) { placemarks, error in
             if let placemark = placemarks?.first {
@@ -663,6 +783,318 @@ struct ContentView: View {
             width: boxWidthPercent,
             height: boxHeightPercent
         )
+    }
+}
+
+// MARK: - Mail Composer View
+struct MailComposerView: View {
+    let recipient: String
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        MailComposeViewController(recipient: recipient, dismiss: dismiss)
+            .ignoresSafeArea()
+    }
+}
+
+struct MailComposeViewController: UIViewControllerRepresentable {
+    let recipient: String
+    let dismiss: DismissAction
+    
+    func makeUIViewController(context: Context) -> MFMailComposeViewController {
+        let composer = MFMailComposeViewController()
+        composer.mailComposeDelegate = context.coordinator
+        composer.setToRecipients([recipient])
+        return composer
+    }
+    
+    func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {
+        // No updates needed
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(dismiss: dismiss)
+    }
+    
+    class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+        let dismiss: DismissAction
+        
+        init(dismiss: DismissAction) {
+            self.dismiss = dismiss
+        }
+        
+        func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
+            dismiss()
+        }
+    }
+}
+
+// MARK: - Map View
+struct MapView: View {
+    let mapItem: MKMapItem
+    @Environment(\.dismiss) var dismiss
+    @State private var region: MKCoordinateRegion
+    @State private var route: MKRoute?
+    @State private var showDirections = false
+    @State private var locationManager = LocationManager()
+    @State private var showLocationAlert = false
+    
+    init(mapItem: MKMapItem) {
+        self.mapItem = mapItem
+        
+        let coordinate = mapItem.placemark.coordinate
+        _region = State(initialValue: MKCoordinateRegion(
+            center: coordinate,
+            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+        ))
+    }
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                MapViewRepresentable(
+                    region: $region,
+                    destination: mapItem.placemark.coordinate,
+                    route: route,
+                    showDirections: showDirections
+                )
+                
+                // Show directions info overlay when route is calculated
+                if showDirections, let route = route {
+                    VStack {
+                        Spacer()
+                        
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Distance: \(formatDistance(route.distance))")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Text("Time: \(formatTime(route.expectedTravelTime))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Button("Hide Route") {
+                                withAnimation {
+                                    showDirections = false
+                                    self.route = nil
+                                    // Reset region to destination
+                                    region = MKCoordinateRegion(
+                                        center: mapItem.placemark.coordinate,
+                                        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                                    )
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                        }
+                        .padding()
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding()
+                    }
+                }
+            }
+            .navigationTitle(mapItem.name ?? "Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if !showDirections {
+                            Button(action: {
+                                requestLocationAndCalculateDirections()
+                            }) {
+                                Label("Show Directions", systemImage: "arrow.triangle.turn.up.right.circle")
+                            }
+                        }
+                        
+                        Button(action: {
+                            // Open in external Maps app with directions
+                            mapItem.openInMaps(launchOptions: [
+                                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
+                            ])
+                        }) {
+                            Label("Directions in Maps", systemImage: "arrow.triangle.turn.up.right.circle.fill")
+                        }
+                        
+                        Button(action: {
+                            // Open in external Maps app without directions
+                            mapItem.openInMaps()
+                        }) {
+                            Label("Open in Maps", systemImage: "map")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+        }
+        .alert("Location Access Required", isPresented: $showLocationAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Settings") {
+                if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(settingsURL)
+                }
+            }
+        } message: {
+            Text("Location access is needed to show directions. Please enable location services in Settings.")
+        }
+        .onAppear {
+            // Request location permission when view appears if not already determined
+            if locationManager.authorizationStatus == .notDetermined {
+                locationManager.requestPermission()
+            }
+        }
+    }
+    
+    private func requestLocationAndCalculateDirections() {
+        // Check location authorization status
+        let status = locationManager.authorizationStatus
+        
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            calculateDirections()
+        } else if status == .notDetermined {
+            // Request permission
+            locationManager.requestPermission()
+            // Wait a bit for the permission dialog, then check again
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if locationManager.authorizationStatus == .authorizedWhenInUse || 
+                   locationManager.authorizationStatus == .authorizedAlways {
+                    calculateDirections()
+                }
+            }
+        } else {
+            // Permission denied - show alert
+            showLocationAlert = true
+        }
+    }
+    
+    private func calculateDirections() {
+        let request = MKDirections.Request()
+        request.source = MKMapItem.forCurrentLocation()
+        request.destination = mapItem
+        request.transportType = .automobile
+        
+        let directions = MKDirections(request: request)
+        directions.calculate { response, error in
+            if let route = response?.routes.first {
+                self.route = route
+                
+                // Adjust region to show entire route
+                let rect = route.polyline.boundingMapRect
+                let inset = rect.size.width * 0.1
+                let region = MKCoordinateRegion(
+                    MKMapRect(
+                        x: rect.origin.x - inset,
+                        y: rect.origin.y - inset,
+                        width: rect.size.width + inset * 2,
+                        height: rect.size.height + inset * 2
+                    )
+                )
+                
+                withAnimation {
+                    self.region = region
+                    showDirections = true
+                }
+            }
+        }
+    }
+    
+    private func formatDistance(_ distance: CLLocationDistance) -> String {
+        let miles = distance / 1609.34
+        if miles < 0.1 {
+            return String(format: "%.0f ft", distance * 3.281)
+        } else {
+            return String(format: "%.1f mi", miles)
+        }
+    }
+    
+    private func formatTime(_ time: TimeInterval) -> String {
+        let hours = Int(time) / 3600
+        let minutes = Int(time) / 60 % 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes) min"
+        }
+    }
+}
+
+// UIViewRepresentable for the actual MapKit view with route overlay
+struct MapViewRepresentable: UIViewRepresentable {
+    @Binding var region: MKCoordinateRegion
+    let destination: CLLocationCoordinate2D
+    let route: MKRoute?
+    let showDirections: Bool
+    
+    func makeUIView(context: Context) -> MKMapView {
+        let mapView = MKMapView()
+        mapView.delegate = context.coordinator
+        mapView.showsUserLocation = true
+        
+        // Add destination pin
+        let annotation = MKPointAnnotation()
+        annotation.coordinate = destination
+        mapView.addAnnotation(annotation)
+        
+        return mapView
+    }
+    
+    func updateUIView(_ mapView: MKMapView, context: Context) {
+        mapView.setRegion(region, animated: true)
+        
+        // Update route overlay
+        mapView.removeOverlays(mapView.overlays)
+        if showDirections, let route = route {
+            mapView.addOverlay(route.polyline)
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator: NSObject, MKMapViewDelegate {
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let polyline = overlay as? MKPolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = .systemBlue
+                renderer.lineWidth = 4
+                return renderer
+            }
+            return MKOverlayRenderer(overlay: overlay)
+        }
+    }
+}
+
+// Make MKPointAnnotation identifiable for the map
+extension MKPointAnnotation: Identifiable {
+    public var id: String {
+        "\(coordinate.latitude),\(coordinate.longitude)"
+    }
+}
+
+// MARK: - Safari View
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let safari = SFSafariViewController(url: url)
+        safari.preferredControlTintColor = .systemBlue
+        return safari
+    }
+    
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {
+        // No updates needed
     }
 }
 
@@ -735,6 +1167,27 @@ struct EventEditView: UIViewControllerRepresentable {
                 }
             }
         }
+    }
+}
+
+// MARK: - Location Manager
+@Observable
+class LocationManager: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    var authorizationStatus: CLAuthorizationStatus
+    
+    override init() {
+        self.authorizationStatus = manager.authorizationStatus
+        super.init()
+        manager.delegate = self
+    }
+    
+    func requestPermission() {
+        manager.requestWhenInUseAuthorization()
+    }
+    
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
     }
 }
 
