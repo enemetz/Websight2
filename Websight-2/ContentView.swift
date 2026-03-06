@@ -13,6 +13,7 @@ import MapKit
 import SafariServices
 import MessageUI
 import CoreLocation
+import SwiftData
 
 struct ContentView: View {
     @AppStorage("openUrlsInApp") private var openUrlsInApp: Bool = false
@@ -37,6 +38,7 @@ struct ContentView: View {
     @State private var showPill3 = false
     @State private var displayedItem: DetectedItem? = nil // Separate state for display
     @State private var isSettingsVisible = false
+    @State private var isHistoryVisible = false
     @State private var showSafari = false
     @State private var safariURL: URL?
     @State private var showMap = false
@@ -44,6 +46,8 @@ struct ContentView: View {
     @State private var showMailComposer = false
     @State private var mailRecipient: String?
     @State private var isCameraPaused = false
+    
+    @Environment(\.modelContext) private var modelContext
     
     
     // Data detector for URLs, emails, phone numbers, addresses, and dates
@@ -169,16 +173,31 @@ struct ContentView: View {
                         VStack {
                             ZStack {
                                 // Centered instruction bubble
-                                Text("Align text within the frame")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
-                                    .glassEffect(.clear.interactive(), in: .capsule)
-                                
+                            
                                 // Settings button on the right
                                 HStack {
+                                    Spacer()
+                                    Button(action: {
+                                        isHistoryVisible.toggle()
+                                    }) {
+                                        Image(systemName: "clock")
+                                            .font(.title3)
+                                            .foregroundStyle(.secondary)
+                                            .padding(10)
+                                    }
+                                    .glassEffect(.clear.interactive(), in: .circle)
+                                    
+                                    Spacer()
+                                    
+                                    
+                                    Text("Align text within the frame")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                        .glassEffect(.clear.interactive(), in: .capsule)
+                                    
                                     Spacer()
                                     
                                     Button(action: {
@@ -186,7 +205,7 @@ struct ContentView: View {
                                     }) {
                                         Image(systemName: "gearshape.fill")
                                             .font(.title3)
-                                            .foregroundStyle(.white)
+                                            .foregroundStyle(.secondary)
                                             .padding(10)
                                     }
                                     .glassEffect(.clear.interactive(), in: .circle)
@@ -222,7 +241,7 @@ struct ContentView: View {
                             }) {
                                 Image(systemName: showZoomSlider ? "minus.magnifyingglass" : "plus.magnifyingglass")
                                     .font(.title2)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.secondary)
                                     .padding(12)
                             }
                             .glassEffect(.regular.interactive(), in: .circle)
@@ -232,7 +251,7 @@ struct ContentView: View {
                                 HStack(spacing: 15) {
                                     Image(systemName: "minus")
                                         .font(.caption)
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(.secondary)
                                     
                                     Slider(value: $zoomLevel, in: 1.0...5.0, step: 0.1)
                                         .tint(.white)
@@ -240,11 +259,11 @@ struct ContentView: View {
                                     
                                     Image(systemName: "plus")
                                         .font(.caption)
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(.secondary)
                                     
                                     Text("\(String(format: "%.1f", zoomLevel))x")
                                         .font(.caption)
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(.primary)
                                         .frame(width: 35)
                                 }
                                 .padding(.horizontal, 20)
@@ -296,7 +315,7 @@ struct ContentView: View {
                                         .font(.subheadline)
                                         .fontWeight(.medium)
                                 }
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
                             }
@@ -319,7 +338,7 @@ struct ContentView: View {
                                         .font(.subheadline)
                                         .fontWeight(.medium)
                                 }
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
                             }
@@ -340,7 +359,7 @@ struct ContentView: View {
                                         .font(.subheadline)
                                         .fontWeight(.medium)
                                 }
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 12)
                             }
@@ -375,11 +394,11 @@ struct ContentView: View {
                         HStack {
                             Image(systemName: item.type.icon)
                                 .font(.title3)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                             
                             Text(item.text.lowercased())
                                 .font(.subheadline)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                                 .lineLimit(2)
                                 .truncationMode(.tail)
                             
@@ -387,6 +406,10 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
+                        .background(
+                            Capsule()
+                                .strokeBorder(.primary.opacity(0.3), lineWidth: 1.5)
+                        )
                         .glassEffect(.regular.interactive(), in: .capsule)
                         .background(
                             Capsule()
@@ -422,11 +445,11 @@ struct ContentView: View {
                         HStack {
                             Image(systemName: "text.viewfinder")
                                 .font(.title3)
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(.primary.opacity(0.7))
                             
                             Text(filteredData)
                                 .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(.primary.opacity(0.7))
                                 .lineLimit(1)
                             
                             Spacer()
@@ -502,6 +525,16 @@ struct ContentView: View {
             }
         }
         .onChange(of: showMailComposer) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .sheet(isPresented: $isHistoryVisible) {
+            HistoryView(
+                openUrlsInApp: openUrlsInApp,
+                openMapsInApp: openMapsInApp,
+                openMailInApp: openMailInApp
+            )
+        }
+        .onChange(of: isHistoryVisible) { oldValue, newValue in
             isCameraPaused = newValue
         }
     }
@@ -630,6 +663,9 @@ struct ContentView: View {
                 lastDetectedItem = item
                 displayedItem = item // Set the displayed item
                 filteredData = item.text
+                
+                // Save to history
+                saveToHistory(text: item.text, type: item.type.description)
                 
                 // Store the matched text for comparison (not the formatted text for dates)
                 lastProcessedText = matchedText
@@ -783,6 +819,27 @@ struct ContentView: View {
             width: boxWidthPercent,
             height: boxHeightPercent
         )
+    }
+    
+    private func saveToHistory(text: String, type: String) {
+        // Create and insert new history record
+        let newHistory = History(text: text, type: type)
+        modelContext.insert(newHistory)
+        
+        // Fetch all history sorted by timestamp (newest first)
+        let descriptor = FetchDescriptor<History>(
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+        )
+        
+        // Get all records and keep only 5 most recent
+        if let allHistory = try? modelContext.fetch(descriptor),
+           allHistory.count > 5 {
+            // Delete oldest records (everything after first 5)
+            allHistory.dropFirst(5).forEach { modelContext.delete($0) }
+        }
+        
+        // Save changes
+        try? modelContext.save()
     }
 }
 
@@ -1188,6 +1245,18 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
+    }
+}
+
+extension ContentView.DetectedItem.DetectedType {
+    var description: String {
+        switch self {
+        case .website: return "website"
+        case .email: return "email"
+        case .phone: return "phone"
+        case .address: return "address"
+        case .date: return "date"
+        }
     }
 }
 
