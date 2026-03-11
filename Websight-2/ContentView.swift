@@ -46,6 +46,7 @@ struct ContentView: View {
     @State private var showMailComposer = false
     @State private var mailRecipient: String?
     @State private var isCameraPaused = false
+    @State private var showWhatsNew = false
     
     @Environment(\.modelContext) private var modelContext
     
@@ -485,6 +486,24 @@ struct ContentView: View {
         }
         .onAppear {
             checkCameraPermission()
+            
+            // TEMPORARY: Reset What's New for testing - REMOVE BEFORE RELEASE
+            #if DEBUG
+            AppVersionManager.shared.resetWhatsNewPrompt()
+            print("🔄 DEBUG: Reset What's New prompt for testing")
+            #endif
+            
+            // Check if we should show What's New
+            if AppVersionManager.shared.shouldShowWhatsNew() {
+                // Delay slightly to ensure the camera view is ready
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showWhatsNew = true
+                    AppVersionManager.shared.markWhatsNewAsShown()
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showWhatsNew) {
+            WhatsNewView()
         }
         .sheet(isPresented: $showEventEditor, onDismiss: {
             // Clear the event to create after dismissing
@@ -593,6 +612,10 @@ struct ContentView: View {
     private func filterImportantData(from text: String) {
         guard !text.isEmpty else {
             filteredData = "Point camera at text..."
+            // Clear lastProcessedText when no text is detected (user panned away)
+            if !lastProcessedText.isEmpty && displayedItem == nil {
+                lastProcessedText = ""
+            }
             return
         }
         
@@ -601,6 +624,10 @@ struct ContentView: View {
         
         if matches.isEmpty {
             filteredData = "No data detected"
+            // Clear lastProcessedText when we can't find matching data (user panned away)
+            if !lastProcessedText.isEmpty && displayedItem == nil {
+                lastProcessedText = ""
+            }
             return
         }
         
@@ -609,8 +636,9 @@ struct ContentView: View {
            let textRange = Range(firstMatch.range, in: text) {
             let matchedText = String(text[textRange])
             
-            // Skip if we just processed this exact text
-            guard matchedText != lastProcessedText else {
+            // Skip if we just processed this exact text AND still have it displayed
+            // This prevents duplicate detections while the UI is showing
+            guard matchedText != lastProcessedText || displayedItem == nil else {
                 return
             }
             
@@ -690,15 +718,14 @@ struct ContentView: View {
                             showPill1 = false
                         }
                         
+                        // Clear lastProcessedText immediately so same item can be detected again
+                        lastProcessedText = ""
+                        
                         // Then remove the detected items after animations complete
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                             lastDetectedItem = nil
                             displayedItem = nil
                             filteredData = "Point camera at text..."
-                            // Clear lastProcessedText a bit later to ensure clean state
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                lastProcessedText = ""
-                            }
                         }
                     }
                 }
@@ -739,20 +766,27 @@ struct ContentView: View {
     
     private func openMapsInAppView(for item: DetectedItem) {
         // Geocode the address and show in-app map view
-        let geocoder = CLGeocoder()
-        geocoder.geocodeAddressString(item.text) { placemarks, error in
-            if let placemark = placemarks?.first {
-                let mkPlacemark = MKPlacemark(placemark: placemark)
-                let mkMapItem = MKMapItem(placemark: mkPlacemark)
-                mkMapItem.name = item.text
-                
-                // Show in-app map
-                mapItem = mkMapItem
-                showMap = true
-            } else {
+        Task {
+            let geocoder = CLGeocoder()
+            do {
+                let placemarks = try await geocoder.geocodeAddressString(item.text)
+                if let placemark = placemarks.first {
+                    await MainActor.run {
+                        let mkPlacemark = MKPlacemark(placemark: placemark)
+                        let mkMapItem = MKMapItem(placemark: mkPlacemark)
+                        mkMapItem.name = item.text
+                        
+                        // Show in-app map
+                        mapItem = mkMapItem
+                        showMap = true
+                    }
+                }
+            } catch {
                 // If geocoding fails, open with URL externally
-                if let url = item.url {
-                    UIApplication.shared.open(url)
+                await MainActor.run {
+                    if let url = item.url {
+                        UIApplication.shared.open(url)
+                    }
                 }
             }
         }
@@ -760,19 +794,26 @@ struct ContentView: View {
     
     private func openMapsExternal(for item: DetectedItem) {
         // Open in external Maps app
-        let geocoder = CLGeocoder()
-        geocoder.geocodeAddressString(item.text) { placemarks, error in
-            if let placemark = placemarks?.first {
-                let mkPlacemark = MKPlacemark(placemark: placemark)
-                let mapItem = MKMapItem(placemark: mkPlacemark)
-                mapItem.name = item.text
-                mapItem.openInMaps(launchOptions: [
-                    MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
-                ])
-            } else {
+        Task {
+            let geocoder = CLGeocoder()
+            do {
+                let placemarks = try await geocoder.geocodeAddressString(item.text)
+                if let placemark = placemarks.first {
+                    await MainActor.run {
+                        let mkPlacemark = MKPlacemark(placemark: placemark)
+                        let mapItem = MKMapItem(placemark: mkPlacemark)
+                        mapItem.name = item.text
+                        mapItem.openInMaps(launchOptions: [
+                            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
+                        ])
+                    }
+                }
+            } catch {
                 // If geocoding fails, open with URL
-                if let url = item.url {
-                    UIApplication.shared.open(url)
+                await MainActor.run {
+                    if let url = item.url {
+                        UIApplication.shared.open(url)
+                    }
                 }
             }
         }
@@ -781,7 +822,6 @@ struct ContentView: View {
     private func clearDetection() {
         detectionTimer?.invalidate()
         detectionTimer = nil
-        lastProcessedText = "" // Clear this so the same text can be detected again
         
         // Animate pills out first
         withAnimation(.easeOut(duration: 0.3)) {
@@ -794,6 +834,9 @@ struct ContentView: View {
         withAnimation(.easeOut(duration: 0.3).delay(0.1)) {
             showPill1 = false
         }
+        
+        // Clear lastProcessedText immediately so the same text can be detected again right away
+        lastProcessedText = ""
         
         // Then remove BOTH the detected item AND displayed item after animations complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -826,20 +869,27 @@ struct ContentView: View {
         let newHistory = History(text: text, type: type)
         modelContext.insert(newHistory)
         
-        // Fetch all history sorted by timestamp (newest first)
-        let descriptor = FetchDescriptor<History>(
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
-        )
-        
-        // Get all records and keep only 5 most recent
-        if let allHistory = try? modelContext.fetch(descriptor),
-           allHistory.count > 5 {
-            // Delete oldest records (everything after first 5)
-            allHistory.dropFirst(5).forEach { modelContext.delete($0) }
+        // OPTIMIZED: Only trim history periodically, not on every save
+        // This drastically improves performance
+        Task.detached(priority: .background) {
+            // Fetch all history sorted by timestamp (newest first)
+            let descriptor = FetchDescriptor<History>(
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+            
+            // Get all records and keep only 5 most recent
+            let allHistory = await MainActor.run {
+                try? modelContext.fetch(descriptor)
+            }
+            
+            if let allHistory = allHistory, allHistory.count > 5 {
+                await MainActor.run {
+                    // Delete oldest records (everything after first 5)
+                    allHistory.dropFirst(5).forEach { modelContext.delete($0) }
+                    try? modelContext.save()
+                }
+            }
         }
-        
-        // Save changes
-        try? modelContext.save()
     }
 }
 
@@ -1146,7 +1196,6 @@ struct SafariView: UIViewControllerRepresentable {
     
     func makeUIViewController(context: Context) -> SFSafariViewController {
         let safari = SFSafariViewController(url: url)
-        safari.preferredControlTintColor = .systemBlue
         return safari
     }
     
