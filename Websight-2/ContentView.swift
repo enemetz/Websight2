@@ -10,8 +10,15 @@ import AVFoundation
 import EventKit
 import EventKitUI
 import MapKit
+import SafariServices
+import MessageUI
+import CoreLocation
+import SwiftData
 
 struct ContentView: View {
+    @AppStorage("openUrlsInApp") private var openUrlsInApp: Bool = false
+    @AppStorage("openMapsInApp") private var openMapsInApp: Bool = false
+    @AppStorage("openMailInApp") private var openMailInApp: Bool = false
     @State private var detectedText: String = "Point camera at text..."
     @State private var filteredData: String = "Point camera at text..."
     @State private var lastDetectedItem: DetectedItem? = nil
@@ -26,11 +33,23 @@ struct ContentView: View {
     @State private var lastProcessedText: String = ""
     @State private var showEventEditor = false
     @State private var eventToCreate: DetectedItem? = nil
-    @State private var openMapsInApp = true // Toggle this for in-app vs external Maps
     @State private var showPill1 = false
     @State private var showPill2 = false
     @State private var showPill3 = false
     @State private var displayedItem: DetectedItem? = nil // Separate state for display
+    @State private var isSettingsVisible = false
+    @State private var isHistoryVisible = false
+    @State private var showSafari = false
+    @State private var safariURL: URL?
+    @State private var showMap = false
+    @State private var mapItem: MKMapItem?
+    @State private var showMailComposer = false
+    @State private var mailRecipient: String?
+    @State private var isCameraPaused = false
+    @State private var showWhatsNew = false
+    
+    @Environment(\.modelContext) private var modelContext
+    
     
     // Data detector for URLs, emails, phone numbers, addresses, and dates
     private let dataDetector: NSDataDetector = {
@@ -44,9 +63,10 @@ struct ContentView: View {
         let url: URL?
         let date: Date? // Store the date for calendar events
         let addressComponents: [String: Any]? // Store address components for MapKit
+        let amount: Decimal? // Store numeric amount for tip calculations
         
         enum DetectedType {
-            case website, email, phone, address, date
+            case website, email, phone, address, date, amount
             
             var icon: String {
                 switch self {
@@ -55,6 +75,7 @@ struct ContentView: View {
                 case .phone: return "phone.fill"
                 case .address: return "mappin.and.ellipse"
                 case .date: return "calendar"
+                case .amount: return "dollarsign.circle"
                 }
             }
         }
@@ -63,7 +84,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             if cameraPermissionGranted {
-                CameraView(detectedText: $detectedText, scanRegion: $scanRegion, zoomLevel: $zoomLevel)
+                CameraView(detectedText: $detectedText, scanRegion: $scanRegion, zoomLevel: $zoomLevel, isPaused: isCameraPaused)
                     .edgesIgnoringSafeArea(.all)
                     .onChange(of: detectedText) { oldValue, newValue in
                         filterImportantData(from: newValue)
@@ -151,19 +172,54 @@ struct ContentView: View {
                             Spacer()
                         }
                         
-                        // Instructions in glass bubble at the top
+                        // Instructions and settings button at the top
                         VStack {
-                            Text("Align text within the frame")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .glassEffect(.regular, in: .capsule)
+                            ZStack {
+                                // Centered instruction bubble
+                            
+                                // Settings button on the right
+                                HStack {
+                                    Spacer()
+                                    Button(action: {
+                                        isHistoryVisible.toggle()
+                                    }) {
+                                        Image(systemName: "clock")
+                                            .font(.title3)
+                                            .foregroundStyle(.secondary)
+                                            .padding(10)
+                                    }
+                                    .glassEffect(.clear.interactive(), in: .circle)
+                                    
+                                    Spacer()
+                                    
+                                    
+                                    Text("Align text within the frame")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                        .glassEffect(.clear.interactive(), in: .capsule)
+                                    
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        isSettingsVisible.toggle()
+                                    }) {
+                                        Image(systemName: "gearshape.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(.secondary)
+                                            .padding(10)
+                                    }
+                                    .glassEffect(.clear.interactive(), in: .circle)
+                                }
+                                .padding(.trailing, 20)
+                            }
                             
                             Spacer()
                         }
                         .padding(.top, 60)
+                        
                         
                         // Zoom control below scan area
                         VStack(spacing: 10) {
@@ -188,7 +244,7 @@ struct ContentView: View {
                             }) {
                                 Image(systemName: showZoomSlider ? "minus.magnifyingglass" : "plus.magnifyingglass")
                                     .font(.title2)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(.secondary)
                                     .padding(12)
                             }
                             .glassEffect(.regular.interactive(), in: .circle)
@@ -198,7 +254,7 @@ struct ContentView: View {
                                 HStack(spacing: 15) {
                                     Image(systemName: "minus")
                                         .font(.caption)
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(.secondary)
                                     
                                     Slider(value: $zoomLevel, in: 1.0...5.0, step: 0.1)
                                         .tint(.white)
@@ -206,11 +262,11 @@ struct ContentView: View {
                                     
                                     Image(systemName: "plus")
                                         .font(.caption)
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(.secondary)
                                     
                                     Text("\(String(format: "%.1f", zoomLevel))x")
                                         .font(.caption)
-                                        .foregroundStyle(.white)
+                                        .foregroundStyle(.primary)
                                         .frame(width: 35)
                                 }
                                 .padding(.horizontal, 20)
@@ -237,79 +293,155 @@ struct ContentView: View {
                     // Floating action pills (show automatically when text is detected)
                     if let item = displayedItem {
                         VStack(alignment: .leading, spacing: 12) {
-                            // Primary action button
-                            Button(action: {
-                                if item.type == .date {
-                                    // Show event editor for dates
-                                    eventToCreate = item
-                                    showEventEditor = true
-                                } else if item.type == .address && openMapsInApp {
-                                    // Open Maps in-app for addresses
-                                    openMapsInApp(for: item)
-                                } else {
-                                    openDetectedItem(item)
+                            // If the detected item is an amount, show tip options; otherwise show default actions
+                            if item.type == .amount {
+                                // +18% button
+                                Button(action: {
+                                    if let base = item.amount {
+                                        handleTipSelection(base: base, percent: 18)
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: "dollarsign")
+                                            .font(.body)
+                                        Text("Tip 18%")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
                                 }
-                                clearDetection()
-                            }) {
-                                HStack {
-                                    Image(systemName: actionIcon(for: item.type))
-                                        .font(.body)
-                                    Text(actionText(for: item.type))
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
+                                .glassEffect(.clear.interactive(), in: .capsule)
+                                .opacity(showPill1 ? 1 : 0)
+                                .scaleEffect(showPill1 ? 1 : 0.8)
+                                .animation(.easeOut(duration: 0.3), value: showPill1)
+                                
+                                // +20% button
+                                Button(action: {
+                                    if let base = item.amount {
+                                        handleTipSelection(base: base, percent: 20)
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: "dollarsign")
+                                            .font(.body)
+                                        Text("Tip 20%")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
                                 }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
+                                .glassEffect(.clear.interactive(), in: .capsule)
+                                .opacity(showPill2 ? 1 : 0)
+                                .scaleEffect(showPill2 ? 1 : 0.8)
+                                .animation(.easeOut(duration: 0.3), value: showPill2)
+                                
+                                // Custom tip button
+                                Button(action: {
+                                    if let base = item.amount {
+                                        promptForTipPercentage { percent in
+                                            guard let percent = percent else { return }
+                                            handleTipSelection(base: base, percent: percent)
+                                        }
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: "dollarsign")
+                                            .font(.body)
+                                        Text("Custom tip")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                }
+                                .glassEffect(.clear.interactive(), in: .capsule)
+                                .opacity(showPill3 ? 1 : 0)
+                                .scaleEffect(showPill3 ? 1 : 0.8)
+                                .animation(.easeOut(duration: 0.3), value: showPill3)
+                            } else {
+                                // Primary action button
+                                Button(action: {
+                                    if item.type == .date {
+                                        // Show event editor for dates
+                                        eventToCreate = item
+                                        showEventEditor = true
+                                    } else if item.type == .address {
+                                        // Handle address - check if user wants in-app map
+                                        if openMapsInApp {
+                                            openMapsInAppView(for: item)
+                                        } else {
+                                            openMapsExternal(for: item)
+                                        }
+                                    } else {
+                                        openDetectedItem(item)
+                                    }
+                                    clearDetection()
+                                }) {
+                                    HStack {
+                                        Image(systemName: actionIcon(for: item.type))
+                                            .font(.body)
+                                        Text(actionText(for: item.type))
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                }
+                                .glassEffect(.clear.interactive(), in: .capsule)
+                                .opacity(showPill1 ? 1 : 0)
+                                .scaleEffect(showPill1 ? 1 : 0.8)
+                                .animation(.easeOut(duration: 0.3), value: showPill1)
+                                
+                                // Copy button
+                                Button(action: {
+                                    UIPasteboard.general.string = item.text
+                                    let generator = UINotificationFeedbackGenerator()
+                                    generator.notificationOccurred(.success)
+                                    clearDetection()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.body)
+                                        Text("Copy")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                }
+                                .glassEffect(.clear.interactive(), in: .capsule)
+                                .opacity(showPill2 ? 1 : 0)
+                                .scaleEffect(showPill2 ? 1 : 0.8)
+                                .animation(.easeOut(duration: 0.3), value: showPill2)
+                                
+                                // Share button
+                                Button(action: {
+                                    shareItem(item)
+                                    clearDetection()
+                                }) {
+                                    HStack {
+                                        Image(systemName: "square.and.arrow.up")
+                                            .font(.body)
+                                        Text("Share")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                }
+                                .glassEffect(.clear.interactive(), in: .capsule)
+                                .opacity(showPill3 ? 1 : 0)
+                                .scaleEffect(showPill3 ? 1 : 0.8)
+                                .animation(.easeOut(duration: 0.3), value: showPill3)
                             }
-                            .glassEffect(.regular.interactive(), in: .capsule)
-                            .opacity(showPill1 ? 1 : 0)
-                            .scaleEffect(showPill1 ? 1 : 0.8)
-                            .animation(.easeOut(duration: 0.3), value: showPill1)
-                            
-                            // Copy button
-                            Button(action: {
-                                UIPasteboard.general.string = item.text
-                                let generator = UINotificationFeedbackGenerator()
-                                generator.notificationOccurred(.success)
-                                clearDetection()
-                            }) {
-                                HStack {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.body)
-                                    Text("Copy")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                            }
-                            .glassEffect(.regular.interactive(), in: .capsule)
-                            .opacity(showPill2 ? 1 : 0)
-                            .scaleEffect(showPill2 ? 1 : 0.8)
-                            .animation(.easeOut(duration: 0.3), value: showPill2)
-                            
-                            // Share button
-                            Button(action: {
-                                shareItem(item)
-                                clearDetection()
-                            }) {
-                                HStack {
-                                    Image(systemName: "square.and.arrow.up")
-                                        .font(.body)
-                                    Text("Share")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                            }
-                            .glassEffect(.regular.interactive(), in: .capsule)
-                            .opacity(showPill3 ? 1 : 0)
-                            .scaleEffect(showPill3 ? 1 : 0.8)
-                            .animation(.easeOut(duration: 0.3), value: showPill3)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal)
@@ -337,11 +469,11 @@ struct ContentView: View {
                         HStack {
                             Image(systemName: item.type.icon)
                                 .font(.title3)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                             
-                            Text(item.text.lowercased())
+                            Text(item.type == .amount ? item.text : item.text.lowercased())
                                 .font(.subheadline)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                                 .lineLimit(2)
                                 .truncationMode(.tail)
                             
@@ -349,6 +481,10 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
+                        .background(
+                            Capsule()
+                                .strokeBorder(.primary.opacity(0.3), lineWidth: 1.5)
+                        )
                         .glassEffect(.regular.interactive(), in: .capsule)
                         .background(
                             Capsule()
@@ -384,11 +520,11 @@ struct ContentView: View {
                         HStack {
                             Image(systemName: "text.viewfinder")
                                 .font(.title3)
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(.primary.opacity(0.7))
                             
                             Text(filteredData)
                                 .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(.primary.opacity(0.7))
                                 .lineLimit(1)
                             
                             Spacer()
@@ -424,6 +560,24 @@ struct ContentView: View {
         }
         .onAppear {
             checkCameraPermission()
+            
+            // TEMPORARY: Reset What's New for testing - REMOVE BEFORE RELEASE
+            #if DEBUG
+            AppVersionManager.shared.resetWhatsNewPrompt()
+            print("🔄 DEBUG: Reset What's New prompt for testing")
+            #endif
+            
+            // Check if we should show What's New
+            if AppVersionManager.shared.shouldShowWhatsNew() {
+                // Delay slightly to ensure the camera view is ready
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showWhatsNew = true
+                    AppVersionManager.shared.markWhatsNewAsShown()
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showWhatsNew) {
+            WhatsNewView()
         }
         .sheet(isPresented: $showEventEditor, onDismiss: {
             // Clear the event to create after dismissing
@@ -433,25 +587,70 @@ struct ContentView: View {
                 EventEditView(event: event, isPresented: $showEventEditor)
             }
         }
+        .onChange(of: showEventEditor) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .fullScreenCover(isPresented: $isSettingsVisible) {
+            SettingsView()
+        }
+        .onChange(of: isSettingsVisible) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .sheet(isPresented: $showSafari) {
+            if let url = safariURL {
+                SafariView(url: url)
+            }
+        }
+        .onChange(of: showSafari) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .sheet(isPresented: $showMap) {
+            if let item = mapItem {
+                MapView(mapItem: item)
+            }
+        }
+        .onChange(of: showMap) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .sheet(isPresented: $showMailComposer) {
+            if let recipient = mailRecipient {
+                MailComposerView(recipient: recipient)
+            }
+        }
+        .onChange(of: showMailComposer) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
+        .sheet(isPresented: $isHistoryVisible) {
+            HistoryView(
+                openUrlsInApp: openUrlsInApp,
+                openMapsInApp: openMapsInApp,
+                openMailInApp: openMailInApp
+            )
+        }
+        .onChange(of: isHistoryVisible) { oldValue, newValue in
+            isCameraPaused = newValue
+        }
     }
     
     private func actionText(for type: DetectedItem.DetectedType) -> String {
         switch type {
-        case .website: return "Open in Safari"
-        case .email: return "Send Email"
-        case .phone: return "Call"
-        case .address: return "Open in Maps"
-        case .date: return "Add to Calendar"
+            case .website: return "Open in Safari"
+            case .email: return "Send Email"
+            case .phone: return "Call"
+            case .address: return "Open in Maps"
+            case .date: return "Add to Calendar"
+            case .amount: return "Select Tip"
         }
     }
     
     private func actionIcon(for type: DetectedItem.DetectedType) -> String {
         switch type {
-        case .website: return "safari"
-        case .email: return "envelope"
-        case .phone: return "phone"
-        case .address: return "map"
-        case .date: return "calendar.badge.plus"
+            case .website: return "safari"
+            case .email: return "envelope"
+            case .phone: return "phone"
+            case .address: return "map"
+            case .date: return "calendar.badge.plus"
+            case .amount: return "dollarsign"
         }
     }
     
@@ -465,6 +664,94 @@ struct ContentView: View {
            let rootViewController = windowScene.windows.first?.rootViewController {
             rootViewController.present(activityVC, animated: true)
         }
+    }
+    
+    // Detect first plausible currency/amount in text
+    private func firstAmount(in text: String) -> Decimal? {
+        // Matches optional $ then digits with optional decimal part, conservative to reduce false positives
+        let pattern = #"(?<!\S)\$?\d{1,5}(?:[\.,]\d{2})?(?!\S)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              let r = Range(match.range, in: text) else { return nil }
+        
+        var raw = String(text[r])
+        raw = raw.replacingOccurrences(of: "$", with: "")
+                 .replacingOccurrences(of: ",", with: "")
+                 .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Normalize decimal separator to dot
+        raw = raw.replacingOccurrences(of: ",", with: ".")
+        
+        return Decimal(string: raw)
+    }
+    
+    // Format a Decimal as localized currency
+    private func formatCurrency(_ amount: Decimal) -> String {
+        let nf = NumberFormatter()
+        nf.numberStyle = .currency
+        nf.locale = .current
+        return nf.string(from: amount as NSDecimalNumber) ?? "\(amount)"
+    }
+    
+    // Build a summary string: bill + tip = total
+    private func tipSummary(base: Decimal, percent: Decimal) -> String {
+        let tip = (base * percent) / 100
+        let total = base + tip
+        return "\(formatCurrency(base)) + \(formatCurrency(tip)) = \(formatCurrency(total))"
+    }
+    
+    // Present a UIKit alert to enter a custom tip percentage
+    private func promptForTipPercentage(completion: @escaping (Decimal?) -> Void) {
+        let alert = UIAlertController(title: "Custom Tip", message: "Enter tip percentage", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.keyboardType = .decimalPad
+            tf.placeholder = "e.g. 18"
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            completion(nil)
+        })
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            let text = alert.textFields?.first?.text ?? ""
+            let cleaned = text.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+            completion(Decimal(string: cleaned))
+        })
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let root = windowScene.windows.first?.rootViewController {
+            root.present(alert, animated: true)
+        }
+    }
+    
+    // Modified handleTipSelection to keep summary until new detection (no auto-clear)
+    private func handleTipSelection(base: Decimal, percent: Decimal) {
+        let summary = tipSummary(base: base, percent: percent)
+
+        // Cancel any existing timers tied to detection animations
+        detectionTimer?.invalidate()
+        detectionTimer = nil
+
+        // Hide the pills gracefully but keep the bottom bar summary
+        withAnimation(.easeOut(duration: 0.3)) {
+            showPill3 = false
+            rainbowGlowOpacity = 0.0
+        }
+        withAnimation(.easeOut(duration: 0.3).delay(0.05)) {
+            showPill2 = false
+        }
+        withAnimation(.easeOut(duration: 0.3).delay(0.1)) {
+            showPill1 = false
+        }
+
+        // Show the computed summary in the bottom bar and keep it until new detection arrives
+        lastDetectedItem = DetectedItem(text: summary, type: .amount, url: nil, date: nil, addressComponents: nil, amount: base)
+        displayedItem = nil
+
+        // This summary will be cleared automatically on the next filterImportantData call when the camera moves away or after the detection timer
+
+        // Haptic feedback
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
     }
     
     private func checkCameraPermission() {
@@ -489,6 +776,64 @@ struct ContentView: View {
     private func filterImportantData(from text: String) {
         guard !text.isEmpty else {
             filteredData = "Point camera at text..."
+            // Fully clear detection state when no text is detected (user panned away)
+            lastProcessedText = ""
+            lastDetectedItem = nil
+            displayedItem = nil
+            return
+        }
+        
+        // PRIORITY: Try to detect a monetary amount first, regardless of other matches
+        if let amount = firstAmount(in: text) {
+            let formatted = formatCurrency(amount)
+
+            // Skip if we just processed this exact amount AND still have it displayed
+            guard formatted != lastProcessedText || displayedItem == nil else {
+                return
+            }
+
+            let item = DetectedItem(text: formatted, type: .amount, url: nil, date: nil, addressComponents: nil, amount: amount)
+
+            // New detection pipeline
+            lastDetectedItem = item
+            displayedItem = item
+            filteredData = item.text
+
+            // Save to history
+            saveToHistory(text: item.text, type: item.type.description)
+
+            // Store for duplicate suppression
+            lastProcessedText = formatted
+
+            // Haptic feedback for detection
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+
+            // Start the standard 3s timer to auto-hide pills and clear bottom bar summary
+            detectionTimer?.invalidate()
+            detectionTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        showPill3 = false
+                        rainbowGlowOpacity = 0.0
+                    }
+                    withAnimation(.easeOut(duration: 0.3).delay(0.05)) {
+                        showPill2 = false
+                    }
+                    withAnimation(.easeOut(duration: 0.3).delay(0.1)) {
+                        showPill1 = false
+                    }
+
+                    // Allow re-detection of the same value later
+                    lastProcessedText = ""
+
+                    // Clear bottom bar and displayed state so new numbers can trigger pills again
+                    lastDetectedItem = nil
+                    displayedItem = nil
+                    filteredData = "Point camera at text..."
+                }
+            }
+
             return
         }
         
@@ -497,6 +842,10 @@ struct ContentView: View {
         
         if matches.isEmpty {
             filteredData = "No data detected"
+            // Clear state so new detections can show pills
+            lastProcessedText = ""
+            lastDetectedItem = nil
+            displayedItem = nil
             return
         }
         
@@ -505,8 +854,9 @@ struct ContentView: View {
            let textRange = Range(firstMatch.range, in: text) {
             let matchedText = String(text[textRange])
             
-            // Skip if we just processed this exact text
-            guard matchedText != lastProcessedText else {
+            // Skip if we just processed this exact text AND still have it displayed
+            // This prevents duplicate detections while the UI is showing
+            guard matchedText != lastProcessedText || displayedItem == nil else {
                 return
             }
             
@@ -516,15 +866,21 @@ struct ContentView: View {
             case .link:
                 if let url = firstMatch.url {
                     if url.scheme == "mailto" {
-                        detectedItem = DetectedItem(text: matchedText, type: .email, url: url, date: nil, addressComponents: nil)
+                        detectedItem = DetectedItem(text: matchedText, type: .email, url: url, date: nil, addressComponents: nil, amount: nil)
                     } else {
-                        detectedItem = DetectedItem(text: matchedText, type: .website, url: url, date: nil, addressComponents: nil)
+                        detectedItem = DetectedItem(text: matchedText, type: .website, url: url, date: nil, addressComponents: nil, amount: nil)
                     }
                 }
             case .phoneNumber:
                 if let phoneNumber = firstMatch.phoneNumber {
-                    let phoneURL = URL(string: "tel:\(phoneNumber.replacingOccurrences(of: " ", with: ""))")
-                    detectedItem = DetectedItem(text: matchedText, type: .phone, url: phoneURL, date: nil, addressComponents: nil)
+                    // Clean the phone number but preserve + for international numbers
+                    let cleanedNumber = phoneNumber
+                        .replacingOccurrences(of: " ", with: "")
+                        .replacingOccurrences(of: "(", with: "")
+                        .replacingOccurrences(of: ")", with: "")
+                        .replacingOccurrences(of: "-", with: "")
+                    let phoneURL = URL(string: "tel:\(cleanedNumber)")
+                    detectedItem = DetectedItem(text: matchedText, type: .phone, url: phoneURL, date: nil, addressComponents: nil, amount: nil)
                 }
             case .address:
                 // Store address components for MapKit
@@ -533,7 +889,7 @@ struct ContentView: View {
                 // Create Maps URL for external opening
                 let encodedAddress = matchedText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
                 let mapsURL = URL(string: "http://maps.apple.com/?q=\(encodedAddress)")
-                detectedItem = DetectedItem(text: matchedText, type: .address, url: mapsURL, date: nil, addressComponents: addressDict)
+                detectedItem = DetectedItem(text: matchedText, type: .address, url: mapsURL, date: nil, addressComponents: addressDict, amount: nil)
             case .date:
                 if let date = firstMatch.date {
                     // Format the date nicely for display
@@ -542,7 +898,7 @@ struct ContentView: View {
                     formatter.timeStyle = .short
                     let formattedDate = formatter.string(from: date)
                     
-                    detectedItem = DetectedItem(text: formattedDate, type: .date, url: nil, date: date, addressComponents: nil)
+                    detectedItem = DetectedItem(text: formattedDate, type: .date, url: nil, date: date, addressComponents: nil, amount: nil)
                 }
             default:
                 break
@@ -553,6 +909,9 @@ struct ContentView: View {
                 lastDetectedItem = item
                 displayedItem = item // Set the displayed item
                 filteredData = item.text
+                
+                // Save to history
+                saveToHistory(text: item.text, type: item.type.description)
                 
                 // Store the matched text for comparison (not the formatted text for dates)
                 lastProcessedText = matchedText
@@ -577,16 +936,13 @@ struct ContentView: View {
                             showPill1 = false
                         }
                         
-                        // Then remove the detected items after animations complete
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            lastDetectedItem = nil
-                            displayedItem = nil
-                            filteredData = "Point camera at text..."
-                            // Clear lastProcessedText a bit later to ensure clean state
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                lastProcessedText = ""
-                            }
-                        }
+                        // Clear lastProcessedText immediately so same item can be detected again
+                        lastProcessedText = ""
+                        
+                        // Clear bottom bar and displayed item so new detections can trigger pills again
+                        lastDetectedItem = nil
+                        displayedItem = nil
+                        filteredData = "Point camera at text..."
                     }
                 }
             }
@@ -596,27 +952,84 @@ struct ContentView: View {
     private func openDetectedItem(_ item: DetectedItem) {
         guard let url = item.url else { return }
         
-        // Open the URL using UIApplication
-        if UIApplication.shared.canOpenURL(url) {
-            UIApplication.shared.open(url)
+        // Open websites in-app if user preference is enabled
+        if item.type == .website && openUrlsInApp {
+            safariURL = url
+            showSafari = true
+        } else if item.type == .email && openMailInApp {
+            // Check if device can send mail before showing composer
+            if MFMailComposeViewController.canSendMail() {
+                // Pause camera immediately
+                isCameraPaused = true
+                
+                // Extract email address from mailto: URL
+                let emailAddress = url.absoluteString.replacingOccurrences(of: "mailto:", with: "")
+                mailRecipient = emailAddress
+                showMailComposer = true
+            } else {
+                // Fall back to opening Mail app externally
+                if UIApplication.shared.canOpenURL(url) {
+                    UIApplication.shared.open(url)
+                }
+            }
+        } else {
+            // Open externally (for phone, or when preference is off)
+            if UIApplication.shared.canOpenURL(url) {
+                UIApplication.shared.open(url)
+            }
         }
     }
     
-    private func openMapsInApp(for item: DetectedItem) {
-        // Fall back to geocoding the address string since MKPlacemark needs coordinates
-        let geocoder = CLGeocoder()
-        geocoder.geocodeAddressString(item.text) { placemarks, error in
-            if let placemark = placemarks?.first {
-                let mkPlacemark = MKPlacemark(placemark: placemark)
-                let mapItem = MKMapItem(placemark: mkPlacemark)
-                mapItem.name = item.text
-                mapItem.openInMaps(launchOptions: [
-                    MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
-                ])
-            } else {
+    private func openMapsInAppView(for item: DetectedItem) {
+        // Geocode the address and show in-app map view
+        Task {
+            let geocoder = CLGeocoder()
+            do {
+                let placemarks = try await geocoder.geocodeAddressString(item.text)
+                if let placemark = placemarks.first {
+                    await MainActor.run {
+                        let mkPlacemark = MKPlacemark(placemark: placemark)
+                        let mkMapItem = MKMapItem(placemark: mkPlacemark)
+                        mkMapItem.name = item.text
+                        
+                        // Show in-app map
+                        mapItem = mkMapItem
+                        showMap = true
+                    }
+                }
+            } catch {
+                // If geocoding fails, open with URL externally
+                await MainActor.run {
+                    if let url = item.url {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+        }
+    }
+    
+    private func openMapsExternal(for item: DetectedItem) {
+        // Open in external Maps app
+        Task {
+            let geocoder = CLGeocoder()
+            do {
+                let placemarks = try await geocoder.geocodeAddressString(item.text)
+                if let placemark = placemarks.first {
+                    await MainActor.run {
+                        let mkPlacemark = MKPlacemark(placemark: placemark)
+                        let mapItem = MKMapItem(placemark: mkPlacemark)
+                        mapItem.name = item.text
+                        mapItem.openInMaps(launchOptions: [
+                            MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
+                        ])
+                    }
+                }
+            } catch {
                 // If geocoding fails, open with URL
-                if let url = item.url {
-                    UIApplication.shared.open(url)
+                await MainActor.run {
+                    if let url = item.url {
+                        UIApplication.shared.open(url)
+                    }
                 }
             }
         }
@@ -625,7 +1038,6 @@ struct ContentView: View {
     private func clearDetection() {
         detectionTimer?.invalidate()
         detectionTimer = nil
-        lastProcessedText = "" // Clear this so the same text can be detected again
         
         // Animate pills out first
         withAnimation(.easeOut(duration: 0.3)) {
@@ -638,6 +1050,9 @@ struct ContentView: View {
         withAnimation(.easeOut(duration: 0.3).delay(0.1)) {
             showPill1 = false
         }
+        
+        // Clear lastProcessedText immediately so the same text can be detected again right away
+        lastProcessedText = ""
         
         // Then remove BOTH the detected item AND displayed item after animations complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -663,6 +1078,344 @@ struct ContentView: View {
             width: boxWidthPercent,
             height: boxHeightPercent
         )
+    }
+    
+    private func saveToHistory(text: String, type: String) {
+        // Create and insert new history record
+        let newHistory = History(text: text, type: type)
+        modelContext.insert(newHistory)
+        
+        // OPTIMIZED: Only trim history periodically, not on every save
+        // This drastically improves performance
+        Task.detached(priority: .background) {
+            // Fetch all history sorted by timestamp (newest first)
+            let descriptor = FetchDescriptor<History>(
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+            
+            // Get all records and keep only 5 most recent
+            let allHistory = await MainActor.run {
+                try? modelContext.fetch(descriptor)
+            }
+            
+            if let allHistory = allHistory, allHistory.count > 5 {
+                await MainActor.run {
+                    // Delete oldest records (everything after first 5)
+                    allHistory.dropFirst(5).forEach { modelContext.delete($0) }
+                    try? modelContext.save()
+                }
+            }
+        }
+    }
+}
+// MARK: - Mail Composer View
+struct MailComposerView: View {
+    let recipient: String
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        MailComposeViewController(recipient: recipient, dismiss: dismiss)
+            .ignoresSafeArea()
+    }
+}
+
+struct MailComposeViewController: UIViewControllerRepresentable {
+    let recipient: String
+    let dismiss: DismissAction
+    
+    func makeUIViewController(context: Context) -> MFMailComposeViewController {
+        let composer = MFMailComposeViewController()
+        composer.mailComposeDelegate = context.coordinator
+        composer.setToRecipients([recipient])
+        return composer
+    }
+    
+    func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {
+        // No updates needed
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(dismiss: dismiss)
+    }
+    
+    class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+        let dismiss: DismissAction
+        
+        init(dismiss: DismissAction) {
+            self.dismiss = dismiss
+        }
+        
+        func mailComposeController(_ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?) {
+            dismiss()
+        }
+    }
+}
+
+// MARK: - Map View
+struct MapView: View {
+    let mapItem: MKMapItem
+    @Environment(\.dismiss) var dismiss
+    @State private var region: MKCoordinateRegion
+    @State private var route: MKRoute?
+    @State private var showDirections = false
+    @State private var locationManager = LocationManager()
+    @State private var showLocationAlert = false
+    
+    init(mapItem: MKMapItem) {
+        self.mapItem = mapItem
+        
+        let coordinate = mapItem.placemark.coordinate
+        _region = State(initialValue: MKCoordinateRegion(
+            center: coordinate,
+            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+        ))
+    }
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                MapViewRepresentable(
+                    region: $region,
+                    destination: mapItem.placemark.coordinate,
+                    route: route,
+                    showDirections: showDirections
+                )
+                
+                // Show directions info overlay when route is calculated
+                if showDirections, let route = route {
+                    VStack {
+                        Spacer()
+                        
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Distance: \(formatDistance(route.distance))")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                Text("Time: \(formatTime(route.expectedTravelTime))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Button("Hide Route") {
+                                withAnimation {
+                                    showDirections = false
+                                    self.route = nil
+                                    // Reset region to destination
+                                    region = MKCoordinateRegion(
+                                        center: mapItem.placemark.coordinate,
+                                        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                                    )
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                        }
+                        .padding()
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding()
+                    }
+                }
+            }
+            .navigationTitle(mapItem.name ?? "Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if !showDirections {
+                            Button(action: {
+                                requestLocationAndCalculateDirections()
+                            }) {
+                                Label("Show Directions", systemImage: "arrow.triangle.turn.up.right.circle")
+                            }
+                        }
+                        
+                        Button(action: {
+                            // Open in external Maps app with directions
+                            mapItem.openInMaps(launchOptions: [
+                                MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
+                            ])
+                        }) {
+                            Label("Directions in Maps", systemImage: "arrow.triangle.turn.up.right.circle.fill")
+                        }
+                        
+                        Button(action: {
+                            // Open in external Maps app without directions
+                            mapItem.openInMaps()
+                        }) {
+                            Label("Open in Maps", systemImage: "map")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+        }
+        .alert("Location Access Required", isPresented: $showLocationAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Settings") {
+                if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(settingsURL)
+                }
+            }
+        } message: {
+            Text("Location access is needed to show directions. Please enable location services in Settings.")
+        }
+        .onAppear {
+            // Request location permission when view appears if not already determined
+            if locationManager.authorizationStatus == .notDetermined {
+                locationManager.requestPermission()
+            }
+        }
+    }
+    
+    private func requestLocationAndCalculateDirections() {
+        // Check location authorization status
+        let status = locationManager.authorizationStatus
+        
+        if status == .authorizedWhenInUse || status == .authorizedAlways {
+            calculateDirections()
+        } else if status == .notDetermined {
+            // Request permission
+            locationManager.requestPermission()
+            // Wait a bit for the permission dialog, then check again
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if locationManager.authorizationStatus == .authorizedWhenInUse ||
+                   locationManager.authorizationStatus == .authorizedAlways {
+                    calculateDirections()
+                }
+            }
+        } else {
+            // Permission denied - show alert
+            showLocationAlert = true
+        }
+    }
+    
+    private func calculateDirections() {
+        let request = MKDirections.Request()
+        request.source = MKMapItem.forCurrentLocation()
+        request.destination = mapItem
+        request.transportType = .automobile
+        
+        let directions = MKDirections(request: request)
+        directions.calculate { response, error in
+            if let route = response?.routes.first {
+                self.route = route
+                
+                // Adjust region to show entire route
+                let rect = route.polyline.boundingMapRect
+                let inset = rect.size.width * 0.1
+                let region = MKCoordinateRegion(
+                    MKMapRect(
+                        x: rect.origin.x - inset,
+                        y: rect.origin.y - inset,
+                        width: rect.size.width + inset * 2,
+                        height: rect.size.height + inset * 2
+                    )
+                )
+                
+                withAnimation {
+                    self.region = region
+                    showDirections = true
+                }
+            }
+        }
+    }
+    
+    private func formatDistance(_ distance: CLLocationDistance) -> String {
+        let miles = distance / 1609.34
+        if miles < 0.1 {
+            return String(format: "%.0f ft", distance * 3.281)
+        } else {
+            return String(format: "%.1f mi", miles)
+        }
+    }
+    
+    private func formatTime(_ time: TimeInterval) -> String {
+        let hours = Int(time) / 3600
+        let minutes = Int(time) / 60 % 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes) min"
+        }
+    }
+}
+
+// UIViewRepresentable for the actual MapKit view with route overlay
+struct MapViewRepresentable: UIViewRepresentable {
+    @Binding var region: MKCoordinateRegion
+    let destination: CLLocationCoordinate2D
+    let route: MKRoute?
+    let showDirections: Bool
+    
+    func makeUIView(context: Context) -> MKMapView {
+        let mapView = MKMapView()
+        mapView.delegate = context.coordinator
+        mapView.showsUserLocation = true
+        
+        // Add destination pin
+        let annotation = MKPointAnnotation()
+        annotation.coordinate = destination
+        mapView.addAnnotation(annotation)
+        
+        return mapView
+    }
+    
+    func updateUIView(_ mapView: MKMapView, context: Context) {
+        mapView.setRegion(region, animated: true)
+        
+        // Update route overlay
+        mapView.removeOverlays(mapView.overlays)
+        if showDirections, let route = route {
+            mapView.addOverlay(route.polyline)
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+    
+    class Coordinator: NSObject, MKMapViewDelegate {
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let polyline = overlay as? MKPolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = .systemBlue
+                renderer.lineWidth = 4
+                return renderer
+            }
+            return MKOverlayRenderer(overlay: overlay)
+        }
+    }
+}
+
+// Make MKPointAnnotation identifiable for the map
+extension MKPointAnnotation: Identifiable {
+    public var id: String {
+        "\(coordinate.latitude),\(coordinate.longitude)"
+    }
+}
+
+// MARK: - Safari View
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        let safari = SFSafariViewController(url: url)
+        return safari
+    }
+    
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {
+        // No updates needed
     }
 }
 
@@ -738,6 +1491,41 @@ struct EventEditView: UIViewControllerRepresentable {
     }
 }
 
+// MARK: - Location Manager
+@Observable
+class LocationManager: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    var authorizationStatus: CLAuthorizationStatus
+    
+    override init() {
+        self.authorizationStatus = manager.authorizationStatus
+        super.init()
+        manager.delegate = self
+    }
+    
+    func requestPermission() {
+        manager.requestWhenInUseAuthorization()
+    }
+    
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        authorizationStatus = manager.authorizationStatus
+    }
+}
+
+extension ContentView.DetectedItem.DetectedType {
+    var description: String {
+        switch self {
+        case .website: return "website"
+        case .email: return "email"
+        case .phone: return "phone"
+        case .address: return "address"
+        case .date: return "date"
+        case .amount: return "amount"
+        }
+    }
+}
+
 #Preview {
     ContentView()
 }
+

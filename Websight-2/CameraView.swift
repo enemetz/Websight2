@@ -12,6 +12,7 @@ struct CameraView: UIViewControllerRepresentable {
     @Binding var detectedText: String
     @Binding var scanRegion: CGRect
     @Binding var zoomLevel: CGFloat
+    var isPaused: Bool = false
     
     func makeUIViewController(context: Context) -> CameraViewController {
         let controller = CameraViewController()
@@ -22,6 +23,13 @@ struct CameraView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: CameraViewController, context: Context) {
         uiViewController.scanRegion = scanRegion
         uiViewController.updateZoom(zoomLevel)
+        
+        // Pause or resume camera based on state
+        if isPaused {
+            uiViewController.pauseCamera()
+        } else {
+            uiViewController.resumeCamera()
+        }
     }
     
     func makeCoordinator() -> Coordinator {
@@ -131,6 +139,20 @@ class CameraViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         captureSession?.stopRunning()
+    }
+    
+    func pauseCamera() {
+        guard let session = captureSession, session.isRunning else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            session.stopRunning()
+        }
+    }
+    
+    func resumeCamera() {
+        guard let session = captureSession, !session.isRunning else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            session.startRunning()
+        }
     }
 }
 
