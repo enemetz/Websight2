@@ -31,6 +31,8 @@ struct ContentView: View {
     @State private var rainbowRotation: Double = 0.0
     @State private var scanAreaGlowOpacity: Double = 0.3
     @State private var lastProcessedText: String = ""
+    @State private var lastHapticAmount: String = ""
+    @State private var lastHapticTime: Date = .distantPast
     @State private var showEventEditor = false
     @State private var eventToCreate: DetectedItem? = nil
     @State private var showPill1 = false
@@ -747,7 +749,8 @@ struct ContentView: View {
         lastDetectedItem = DetectedItem(text: summary, type: .amount, url: nil, date: nil, addressComponents: nil, amount: base)
         displayedItem = nil
 
-        // This summary will be cleared automatically on the next filterImportantData call when the camera moves away or after the detection timer
+        // Keep the summary visible a bit longer; it will still be cleared by filterImportantData on next input
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { /* no-op */ }
 
         // Haptic feedback
         let generator = UINotificationFeedbackGenerator()
@@ -805,13 +808,18 @@ struct ContentView: View {
             // Store for duplicate suppression
             lastProcessedText = formatted
 
-            // Haptic feedback for detection
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
+            // Haptic feedback for detection (debounced for repeated same-amount detections)
+            let now = Date()
+            if formatted != lastHapticAmount || now.timeIntervalSince(lastHapticTime) > 1.5 {
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+                lastHapticAmount = formatted
+                lastHapticTime = now
+            }
 
-            // Start the standard 3s timer to auto-hide pills and clear bottom bar summary
+            // Start the standard 5s timer to auto-hide pills and clear bottom bar summary
             detectionTimer?.invalidate()
-            detectionTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
+            detectionTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
                 DispatchQueue.main.async {
                     withAnimation(.easeOut(duration: 0.3)) {
                         showPill3 = false
@@ -916,13 +924,18 @@ struct ContentView: View {
                 // Store the matched text for comparison (not the formatted text for dates)
                 lastProcessedText = matchedText
                 
-                // Haptic feedback for detection
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
+                // Haptic feedback for detection (debounced for repeated same-text detections)
+                let now = Date()
+                if matchedText != lastHapticAmount || now.timeIntervalSince(lastHapticTime) > 1.5 {
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.success)
+                    lastHapticAmount = matchedText
+                    lastHapticTime = now
+                }
                 
-                // Reset the timer
+                // Reset the timer (longer delay 5s)
                 detectionTimer?.invalidate()
-                detectionTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
+                detectionTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { _ in
                     DispatchQueue.main.async {
                         // Animate pills out
                         withAnimation(.easeOut(duration: 0.3)) {
