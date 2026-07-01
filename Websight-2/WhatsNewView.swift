@@ -12,39 +12,11 @@ struct WhatsNewView: View {
     
     private let features: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "safari",
-            iconColor: .blue,
-            title: "Browse In-App",
-            description: "Open websites directly in the app with a beautiful Safari view",
-            imageName: "safari.feature"
-        ),
-        WhatsNewFeature(
-            icon: "map.fill",
+            icon: "dollarsign.square.fill",
             iconColor: .green,
-            title: "Maps Integration",
-            description: "View addresses on an interactive map without leaving the app",
-            imageName: "maps.feature"
-        ),
-        WhatsNewFeature(
-            icon: "envelope.fill",
-            iconColor: .blue,
-            title: "Compose Mail",
-            description: "Write emails directly in the app with full Mail composer",
-            imageName: "mail.feature"
-        ),
-        WhatsNewFeature(
-            icon: "clock.fill",
-            iconColor: .purple,
-            title: "Smart History",
-            description: "Your detected items are now saved with quick actions to reuse them",
-            imageName: "history.feature"
-        ),
-        WhatsNewFeature(
-            icon: "gearshape.fill",
-            iconColor: .gray,
-            title: "Customizable Settings",
-            description: "New settings page lets you choose whether actions open in-app or externally",
-            imageName: "settings.feature"
+            title: "Tip Calculator",
+            description: "Calculate tips just by pointing the camera.",
+            imageName: "safari.feature"
         )
     ]
     
@@ -85,7 +57,7 @@ struct WhatsNewView: View {
                                 .font(.system(size: 36, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white)
                             
-                            Text("Version 2.2")
+                            Text("Version 2.3")
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.6))
                         }

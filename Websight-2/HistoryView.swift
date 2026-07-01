@@ -15,7 +15,7 @@ import EventKit
 import EventKitUI
 
 struct HistoryView: View {
-    @Query(sort: \History.timestamp, order: .reverse) 
+    @Query(sort: \History.timestamp, order: .reverse)
     private var historyItems: [History]
     
     let openUrlsInApp: Bool
@@ -38,6 +38,10 @@ struct HistoryView: View {
     @State private var eventToAdd: EKEvent?
     @State private var eventStore: EKEventStore?
     @State private var shareItem: String?
+    
+    @State private var showTipSheet = false
+    @State private var tipBaseAmount: Decimal?
+    @State private var tipResultText: String?
     
     var body: some View {
         NavigationStack {
@@ -89,6 +93,24 @@ struct HistoryView: View {
             }
             .sheet(item: $shareItem) { item in
                 ShareSheet(items: [item])
+            }
+            .sheet(isPresented: $showTipSheet) {
+                TipCalculatorSheet(
+                    baseAmount: tipBaseAmount,
+                    resultText: $tipResultText,
+                    onSelectPercent: { percent in
+                        if let base = tipBaseAmount {
+                            tipResultText = tipSummary(base: base, percent: percent)
+                        }
+                    },
+                    onCustomPercent: { percent in
+                        if let base = tipBaseAmount, let p = percent {
+                            tipResultText = tipSummary(base: base, percent: p)
+                        }
+                    }
+                )
+                .presentationDetents([.fraction(0.4), .medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .overlay {
                 loadingOverlay
@@ -183,6 +205,7 @@ struct HistoryView: View {
         case "phone": return "phone.fill"
         case "address": return "mappin.and.ellipse"
         case "date": return "calendar"
+        case "amount": return "dollarsign.circle"
         default: return "text.alignleft"
         }
     }
@@ -194,6 +217,7 @@ struct HistoryView: View {
         case "phone": return "Call"
         case "address": return "Open in Maps"
         case "date": return "Add to Calendar"
+        case "amount": return "Calculate Tip"
         default: return "Open"
         }
     }
@@ -223,6 +247,14 @@ struct HistoryView: View {
         // Add haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
+        
+        if item.type.lowercased() == "amount" {
+            // Try to parse a base amount from the text
+            self.tipBaseAmount = firstAmount(in: item.text)
+            self.tipResultText = nil
+            self.showTipSheet = true
+            return
+        }
         
         // Create appropriate URL based on type
         let urlString: String
@@ -426,6 +458,113 @@ struct HistoryView: View {
         
         return nil
     }
+    
+    private func firstAmount(in text: String) -> Decimal? {
+        let pattern = #"(?<!\S)\$?\d{1,6}(?:[\.,]\d{2})?(?!\S)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              let r = Range(match.range, in: text) else { return nil }
+        var raw = String(text[r])
+        raw = raw.replacingOccurrences(of: "$", with: "")
+                 .replacingOccurrences(of: ",", with: "")
+                 .trimmingCharacters(in: .whitespacesAndNewlines)
+        raw = raw.replacingOccurrences(of: ",", with: ".")
+        return Decimal(string: raw)
+    }
+
+    private func formatCurrency(_ amount: Decimal) -> String {
+        let nf = NumberFormatter()
+        nf.numberStyle = .currency
+        nf.locale = .current
+        return nf.string(from: amount as NSDecimalNumber) ?? "\(amount)"
+    }
+
+    private func tipSummary(base: Decimal, percent: Decimal) -> String {
+        let tip = (base * percent) / 100
+        let total = base + tip
+        return "\(formatCurrency(base)) + \(formatCurrency(tip)) = \(formatCurrency(total))"
+    }
+}
+
+// MARK: - Tip Calculator Sheet View
+
+struct TipCalculatorSheet: View {
+    let baseAmount: Decimal?
+    @Binding var resultText: String?
+    let onSelectPercent: (Decimal) -> Void
+    let onCustomPercent: (Decimal?) -> Void
+    @State private var customInput: String = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Calculate Tip")
+                    .font(.headline)
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let base = baseAmount {
+                Text("Bill: \(formatCurrency(base))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Enter or select a tip to see the total")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                Button { onSelectPercent(18) } label: {
+                    HStack { Image(systemName: "dollarsign"); Text("Tip 18%") }
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                }
+                .glassEffect(.clear.interactive(), in: .capsule)
+
+                Button { onSelectPercent(20) } label: {
+                    HStack { Image(systemName: "dollarsign"); Text("Tip 20%") }
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                }
+                .glassEffect(.clear.interactive(), in: .capsule)
+            }
+
+            HStack(spacing: 12) {
+                Image(systemName: "dollarsign")
+                TextField("Custom %", text: $customInput)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                Button("Apply") {
+                    let cleaned = customInput.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    onCustomPercent(Decimal(string: cleaned))
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if let result = resultText {
+                Divider()
+                Text(result)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .presentationDragIndicator(.visible)
+    }
+
+    private func formatCurrency(_ amount: Decimal) -> String {
+        let nf = NumberFormatter()
+        nf.numberStyle = .currency
+        nf.locale = .current
+        return nf.string(from: amount as NSDecimalNumber) ?? "\(amount)"
+    }
 }
 
 // MARK: - History Item Row
@@ -568,6 +707,7 @@ struct HistoryItemRow: View {
         case "phone": return "phone.fill"
         case "address": return "mappin.and.ellipse"
         case "date": return "calendar"
+        case "amount": return "dollarsign.circle"
         default: return "text.alignleft"
         }
     }
@@ -579,6 +719,7 @@ struct HistoryItemRow: View {
         case "phone": return "Call"
         case "address": return "Open in Maps"
         case "date": return "Add to Calendar"
+        case "amount": return "Calculate Tip"
         default: return "Open"
         }
     }
