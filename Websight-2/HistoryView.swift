@@ -25,23 +25,32 @@ struct HistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedItem: History?
     @State private var showActionSheet = false
-    @State private var showSafari = false
-    @State private var safariURL: URL?
-    @State private var showMap = false
-    @State private var mapItem: MKMapItem?
-    @State private var showMailComposer = false
-    @State private var mailRecipient: String?
     @State private var isLoading = false
     @State private var pressedButtonId: String?
     @State private var showCopiedConfirmation = false
-    @State private var showEventEditor = false
-    @State private var eventToAdd: EKEvent?
-    @State private var eventStore: EKEventStore?
-    @State private var shareItem: String?
+    @State private var activeSheet: ActiveSheet?
     
     @State private var showTipSheet = false
     @State private var tipBaseAmount: Decimal?
     @State private var tipResultText: String?
+    
+    private enum ActiveSheet: Identifiable {
+        case safari(URL)
+        case map(MKMapItem)
+        case mail(String)
+        case event(EKEvent, EKEventStore)
+        case share(String)
+        
+        var id: String {
+            switch self {
+            case .safari: return "safari"
+            case .map: return "map"
+            case .mail: return "mail"
+            case .event: return "event"
+            case .share: return "share"
+            }
+        }
+    }
     
     var body: some View {
         NavigationStack {
@@ -71,28 +80,19 @@ struct HistoryView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showSafari) {
-                if let url = safariURL {
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .safari(let url):
                     SafariView(url: url)
-                }
-            }
-            .sheet(isPresented: $showMap) {
-                if let item = mapItem {
-                    MapView(mapItem: item)
-                }
-            }
-            .sheet(isPresented: $showMailComposer) {
-                if let recipient = mailRecipient {
+                case .map(let mapItem):
+                    MapView(mapItem: mapItem)
+                case .mail(let recipient):
                     MailComposerView(recipient: recipient)
-                }
-            }
-            .sheet(isPresented: $showEventEditor) {
-                if let event = eventToAdd, let store = eventStore {
+                case .event(let event, let store):
                     HistoryEventEditView(event: event, eventStore: store)
+                case .share(let text):
+                    ShareSheet(items: [text])
                 }
-            }
-            .sheet(item: $shareItem) { item in
-                ShareSheet(items: [item])
             }
             .sheet(isPresented: $showTipSheet) {
                 TipCalculatorSheet(
@@ -264,8 +264,7 @@ struct HistoryView: View {
             urlString = item.text.hasPrefix("http") ? item.text : "https://\(item.text)"
             if let url = URL(string: urlString) {
                 if openUrlsInApp {
-                    safariURL = url
-                    showSafari = true
+                    activeSheet = .safari(url)
                 } else if UIApplication.shared.canOpenURL(url) {
                     UIApplication.shared.open(url)
                 }
@@ -273,8 +272,7 @@ struct HistoryView: View {
             return
         case "email":
             if openMailInApp && MFMailComposeViewController.canSendMail() {
-                mailRecipient = item.text
-                showMailComposer = true
+                activeSheet = .mail(item.text)
             } else {
                 urlString = "mailto:\(item.text)"
                 if let url = URL(string: urlString),
@@ -288,7 +286,7 @@ struct HistoryView: View {
             urlString = "tel:\(cleaned)"
         case "address":
             if openMapsInApp {
-                openMapsInApp(for: item)
+                openMapsInAppAction(for: item)
             } else {
                 openMapsExternal(for: item)
             }
@@ -306,7 +304,7 @@ struct HistoryView: View {
         }
     }
     
-    private func openMapsInApp(for item: History) {
+    private func openMapsInAppAction(for item: History) {
         Task {
             await MainActor.run {
                 isLoading = true
@@ -322,13 +320,10 @@ struct HistoryView: View {
                 
                 if let firstItem = mapItems.first {
                     await MainActor.run {
-                        self.mapItem = firstItem
                         self.isLoading = false
-                        // Small delay to ensure smooth transition
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(50))
-                            self.showMap = true
-                        }
+                        // activeSheet is a single atomic state change now,
+                        // so there's no need for the old presentation-delay hack.
+                        self.activeSheet = .map(firstItem)
                     }
                 } else {
                     await MainActor.run {
@@ -385,8 +380,7 @@ struct HistoryView: View {
     }
     
     private func shareItem(_ item: History) {
-        // Use SwiftUI sheet presentation instead of UIKit
-        shareItem = item.text
+        activeSheet = .share(item.text)
     }
     
     private func addToCalendar(text: String) {
@@ -413,9 +407,7 @@ struct HistoryView: View {
                     
                     event.calendar = store.defaultCalendarForNewEvents
                     
-                    eventStore = store
-                    eventToAdd = event
-                    showEventEditor = true
+                    activeSheet = .event(event, store)
                 }
             } catch {
                 print("Calendar error: \(error)")
@@ -501,14 +493,16 @@ struct TipCalculatorSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Calculate Tip")
-                    .font(.headline)
+                    .font(.title2).padding(.top, 5)
                 Spacer()
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
+                        .font(.title)
+                        .foregroundStyle(.white).glassEffect()
+                }.padding()
             }
+            
+            Divider()
 
             if let base = baseAmount {
                 Text("Bill: \(formatCurrency(base))")
@@ -535,10 +529,12 @@ struct TipCalculatorSheet: View {
             }
 
             HStack(spacing: 12) {
-                Image(systemName: "dollarsign")
+                Image(systemName: "percent")
                 TextField("Custom %", text: $customInput)
+                    .padding(.all, 5)
+                    .glassEffect()
                     .keyboardType(.decimalPad)
-                    .textFieldStyle(.roundedBorder)
+                    
                 Button("Apply") {
                     let cleaned = customInput.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
                     onCustomPercent(Decimal(string: cleaned))
@@ -791,11 +787,6 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
-
-// Make String identifiable for the sheet
-extension String: Identifiable {
-    public var id: String { self }
 }
 
 #Preview {

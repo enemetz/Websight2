@@ -573,7 +573,7 @@ struct ContentView: View {
             if AppVersionManager.shared.shouldShowWhatsNew() {
                 // Delay slightly to ensure the camera view is ready
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    showWhatsNew = true
+                    showWhatsNew = false
                     AppVersionManager.shared.markWhatsNewAsShown()
                 }
             }
