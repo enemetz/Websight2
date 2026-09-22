@@ -101,7 +101,7 @@ struct ContentView: View {
                             ZStack {
                                 Color.black.opacity(0.15)
                             }
-                            .glassEffect(.regular, in: .rect)
+                            .background(.regularMaterial)
                             .mask(
                                 Rectangle()
                                     .overlay(
