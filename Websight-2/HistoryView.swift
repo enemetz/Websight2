@@ -74,11 +74,11 @@ struct HistoryView: View {
             .scrollContentBackground(.hidden)
             .navigationTitle("History")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .topBarTrailing, content: {
+                    Button("", systemImage: "xmark", action:  {
                         dismiss()
-                    }
-                }
+                    })
+                })
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
