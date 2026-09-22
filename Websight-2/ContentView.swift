@@ -19,12 +19,13 @@ struct ContentView: View {
     @AppStorage("openUrlsInApp") private var openUrlsInApp: Bool = false
     @AppStorage("openMapsInApp") private var openMapsInApp: Bool = false
     @AppStorage("openMailInApp") private var openMailInApp: Bool = false
-    @State private var detectedText: String = "Point camera at text..."
-    @State private var filteredData: String = "Point camera at text..."
+    @State private var detectedText: String = "No data detected"
+    @State private var filteredData: String = "No data detected"
     @State private var lastDetectedItem: DetectedItem? = nil
     @State private var cameraPermissionGranted = false
     @State private var scanRegion: CGRect = .zero
     @State private var detectionTimer: Timer? = nil
+    @State private var emptyTextClearTimer: Timer? = nil
     @State private var zoomLevel: CGFloat = 1.0
     @State private var showZoomSlider = false
     @State private var rainbowGlowOpacity: Double = 0.3
@@ -84,401 +85,356 @@ struct ContentView: View {
     }
     
     var body: some View {
-        ZStack {
-            if cameraPermissionGranted {
-                CameraView(detectedText: $detectedText, scanRegion: $scanRegion, zoomLevel: $zoomLevel, isPaused: isCameraPaused)
-                    .edgesIgnoringSafeArea(.all)
-                    .onChange(of: detectedText) { oldValue, newValue in
-                        filterImportantData(from: newValue)
-                    }
-                
-                // Completely clear scan area with Liquid Glass background
-                GeometryReader { geometry in
-                    ZStack {
-                        // Liquid Glass background (everywhere)
-                        ZStack {
-                            Color.black.opacity(0.15)
+        NavigationStack {
+            ZStack {
+                if cameraPermissionGranted {
+                    CameraView(detectedText: $detectedText, scanRegion: $scanRegion, zoomLevel: $zoomLevel, isPaused: isCameraPaused)
+                        .edgesIgnoringSafeArea(.all)
+                        .onChange(of: detectedText) { oldValue, newValue in
+                            filterImportantData(from: newValue)
                         }
-                        .glassEffect(.regular, in: .rect)
-                        .mask(
-                            Rectangle()
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 20)
-                                        .frame(
-                                            width: geometry.size.width * 0.85,
-                                            height: geometry.size.height * 0.1
-                                        )
-                                        .blendMode(.destinationOut)
-                                )
-                        )
-                        .ignoresSafeArea()
-                        
-                        // Glowing border around scan area
-                        VStack {
-                            Spacer()
-                            
+                    
+                    // Completely clear scan area with Liquid Glass background
+                    GeometryReader { geometry in
+                        ZStack {
+                            // Liquid Glass background (everywhere)
                             ZStack {
-                                // Rainbow glow shadow - multiple layers for intensity (appears when text is detected)
-                                ForEach(0..<3) { index in
-                                    RoundedRectangle(cornerRadius: 20)
-                                        .stroke(lineWidth: 4)
-                                        .foregroundStyle(
-                                            AngularGradient(
-                                                colors: [
-                                                    Color(red: 1.0, green: 0.7, blue: 0.7),   // Pastel red/pink
-                                                    Color(red: 1.0, green: 0.85, blue: 0.7),  // Pastel orange
-                                                    Color(red: 1.0, green: 1.0, blue: 0.7),   // Pastel yellow
-                                                    Color(red: 0.7, green: 1.0, blue: 0.7),   // Pastel green
-                                                    Color(red: 0.7, green: 0.85, blue: 1.0),  // Pastel blue
-                                                    Color(red: 0.85, green: 0.7, blue: 1.0),  // Pastel purple
-                                                    Color(red: 1.0, green: 0.7, blue: 0.7)    // Back to pastel red/pink
-                                                ],
-                                                center: .center,
-                                                angle: .degrees(rainbowRotation)
+                                Color.black.opacity(0.15)
+                            }
+                            .glassEffect(.regular, in: .rect)
+                            .mask(
+                                Rectangle()
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .frame(
+                                                width: geometry.size.width * 0.85,
+                                                height: geometry.size.height * 0.1
                                             )
-                                        )
-                                        .frame(
-                                            width: geometry.size.width * 0.85,
-                                            height: geometry.size.height * 0.1
-                                        )
-                                        .blur(radius: CGFloat(8 + index * 6))
-                                        .opacity(lastDetectedItem != nil ? scanAreaGlowOpacity : 0)
-                                        .animation(.easeInOut(duration: 0.8), value: lastDetectedItem != nil)
+                                            .blendMode(.destinationOut)
+                                    )
+                            )
+                            .ignoresSafeArea()
+                            
+                            // Glowing border around scan area
+                            VStack {
+                                Spacer()
+                                
+                                ZStack {
+                                    // Rainbow glow shadow - multiple layers for intensity (appears when text is detected)
+                                    ForEach(0..<3) { index in
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .stroke(lineWidth: 4)
+                                            .foregroundStyle(
+                                                AngularGradient(
+                                                    colors: [
+                                                        Color(red: 1.0, green: 0.7, blue: 0.7),   // Pastel red/pink
+                                                        Color(red: 1.0, green: 0.85, blue: 0.7),  // Pastel orange
+                                                        Color(red: 1.0, green: 1.0, blue: 0.7),   // Pastel yellow
+                                                        Color(red: 0.7, green: 1.0, blue: 0.7),   // Pastel green
+                                                        Color(red: 0.7, green: 0.85, blue: 1.0),  // Pastel blue
+                                                        Color(red: 0.85, green: 0.7, blue: 1.0),  // Pastel purple
+                                                        Color(red: 1.0, green: 0.7, blue: 0.7)    // Back to pastel red/pink
+                                                    ],
+                                                    center: .center,
+                                                    angle: .degrees(rainbowRotation)
+                                                )
+                                            )
+                                            .frame(
+                                                width: geometry.size.width * 0.85,
+                                                height: geometry.size.height * 0.1
+                                            )
+                                            .blur(radius: CGFloat(8 + index * 6))
+                                            .opacity(lastDetectedItem != nil ? scanAreaGlowOpacity : 0)
+                                            .animation(.easeInOut(duration: 0.8), value: lastDetectedItem != nil)
+                                    }
+                                    
+                                    // Subtle white glow shadow - multiple layers (always visible)
+                                    ForEach(0..<2) { index in
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .stroke(lineWidth: 3)
+                                            .foregroundStyle(Color.white)
+                                            .frame(
+                                                width: geometry.size.width * 0.85,
+                                                height: geometry.size.height * 0.1
+                                            )
+                                            .blur(radius: CGFloat(6 + index * 8))
+                                            .opacity(lastDetectedItem != nil ? 0 : scanAreaGlowOpacity * 0.8)
+                                            .animation(.easeInOut(duration: 0.8), value: lastDetectedItem != nil)
+                                    }
+                                }
+                                .onAppear {
+                                    // Start rotation animation (shared with bottom button)
+                                    withAnimation(.linear(duration: 8.0).repeatForever(autoreverses: false)) {
+                                        rainbowRotation = 360.0
+                                    }
+                                    // Pulsing glow animation
+                                    withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                                        scanAreaGlowOpacity = 0.9
+                                    }
                                 }
                                 
-                                // Subtle white glow shadow - multiple layers (always visible)
-                                ForEach(0..<2) { index in
-                                    RoundedRectangle(cornerRadius: 20)
-                                        .stroke(lineWidth: 3)
-                                        .foregroundStyle(Color.white)
-                                        .frame(
-                                            width: geometry.size.width * 0.85,
-                                            height: geometry.size.height * 0.1
-                                        )
-                                        .blur(radius: CGFloat(6 + index * 8))
-                                        .opacity(lastDetectedItem != nil ? 0 : scanAreaGlowOpacity * 0.8)
-                                        .animation(.easeInOut(duration: 0.8), value: lastDetectedItem != nil)
-                                }
-                            }
-                            .onAppear {
-                                // Start rotation animation (shared with bottom button)
-                                withAnimation(.linear(duration: 8.0).repeatForever(autoreverses: false)) {
-                                    rainbowRotation = 360.0
-                                }
-                                // Pulsing glow animation
-                                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                                    scanAreaGlowOpacity = 0.9
-                                }
+                                Spacer()
                             }
                             
-                            Spacer()
-                        }
-                        
-                        // Instructions and settings button at the top
-                        VStack {
-                            ZStack {
-                                // Centered instruction bubble
-                            
-                                // Settings button on the right
-                                HStack {
-                                    Spacer()
-                                    Button(action: {
-                                        isHistoryVisible.toggle()
-                                    }) {
-                                        Image(systemName: "clock")
-                                            .font(.title3)
-                                            .foregroundStyle(.secondary)
-                                            .padding(10)
+                            // Zoom control below scan area
+                            VStack(spacing: 10) {
+                                Spacer()
+                                
+                                // The scan area placeholder (invisible, just for spacing)
+                                Color.clear
+                                    .frame(
+                                        width: geometry.size.width * 0.85,
+                                        height: geometry.size.height * 0.1
+                                    )
+                                
+                                // Additional spacing between scan area and zoom button
+                                Spacer()
+                                    .frame(height: 70)
+                                
+                                // Zoom button
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.3)) {
+                                        showZoomSlider.toggle()
                                     }
-                                    .glassEffect(.clear.interactive(), in: .circle)
-                                    
-                                    Spacer()
-                                    
-                                    
-                                    Text("Align text within the frame")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
+                                }) {
+                                    Image(systemName: showZoomSlider ? "minus.magnifyingglass" : "plus.magnifyingglass")
+                                        .font(.title2)
+                                        .foregroundStyle(.secondary)
+                                        .padding(12)
+                                }
+                                .glassEffect(.regular.interactive(), in: .circle)
+                                
+                                // Horizontal zoom slider (shows when toggled)
+                                if showZoomSlider {
+                                    HStack(spacing: 15) {
+                                        Image(systemName: "minus")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Slider(value: $zoomLevel, in: 1.0...5.0, step: 0.1)
+                                            .tint(.white)
+                                            .frame(maxWidth: 200)
+                                        
+                                        Image(systemName: "plus")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Text("\(String(format: "%.1f", zoomLevel))x")
+                                            .font(.caption)
+                                            .foregroundStyle(.primary)
+                                            .frame(width: 35)
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 12)
+                                    .glassEffect(.regular, in: .capsule)
+                                    .transition(.scale.combined(with: .opacity))
+                                }
+                                
+                                Spacer()
+                            }
+                        }
+                        .onAppear {
+                            updateScanRegion(geometry: geometry)
+                        }
+                        .onChange(of: geometry.size) { oldSize, newSize in
+                            updateScanRegion(geometry: geometry)
+                        }
+                    }
+                    .edgesIgnoringSafeArea(.all)
+                    
+                    VStack {
+                        Spacer()
+                        
+                        // Floating action pills (show automatically when text is detected)
+                        if let item = displayedItem {
+                            VStack(alignment: .leading, spacing: 12) {
+                                if item.type != .amount {
+                                    // Primary action button
+                                    Button(action: {
+                                        if item.type == .date {
+                                            // Show event editor for dates
+                                            eventToCreate = item
+                                            showEventEditor = true
+                                        } else if item.type == .address {
+                                            // Handle address - check if user wants in-app map
+                                            if openMapsInApp {
+                                                openMapsInAppView(for: item)
+                                            } else {
+                                                openMapsExternal(for: item)
+                                            }
+                                        } else {
+                                            openDetectedItem(item)
+                                        }
+                                        clearDetection()
+                                    }) {
+                                        HStack {
+                                            Image(systemName: actionIcon(for: item.type))
+                                                .font(.body)
+                                            Text(actionText(for: item.type))
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                        }
                                         .foregroundStyle(.primary)
                                         .padding(.horizontal, 20)
                                         .padding(.vertical, 12)
-                                        .glassEffect(.clear.interactive(), in: .capsule)
+                                    }
+                                    .glassEffect(.clear.interactive(), in: .capsule)
+                                    .opacity(showPill1 ? 1 : 0)
+                                    .scaleEffect(showPill1 ? 1 : 0.8)
+                                    .animation(.easeOut(duration: 0.3), value: showPill1)
                                     
-                                    Spacer()
-                                    
+                                    // Copy button
                                     Button(action: {
-                                        isSettingsVisible.toggle()
+                                        UIPasteboard.general.string = item.text
+                                        let generator = UINotificationFeedbackGenerator()
+                                        generator.notificationOccurred(.success)
+                                        clearDetection()
                                     }) {
-                                        Image(systemName: "gearshape.fill")
-                                            .font(.title3)
-                                            .foregroundStyle(.secondary)
-                                            .padding(10)
-                                    }
-                                    .glassEffect(.clear.interactive(), in: .circle)
-                                }
-                                .padding(.trailing, 20)
-                            }
-                            
-                            Spacer()
-                        }
-                        .padding(.top, 60)
-                        
-                        
-                        // Zoom control below scan area
-                        VStack(spacing: 10) {
-                            Spacer()
-                            
-                            // The scan area placeholder (invisible, just for spacing)
-                            Color.clear
-                                .frame(
-                                    width: geometry.size.width * 0.85,
-                                    height: geometry.size.height * 0.1
-                                )
-                            
-                            // Additional spacing between scan area and zoom button
-                            Spacer()
-                                .frame(height: 70)
-                            
-                            // Zoom button
-                            Button(action: {
-                                withAnimation(.spring(response: 0.3)) {
-                                    showZoomSlider.toggle()
-                                }
-                            }) {
-                                Image(systemName: showZoomSlider ? "minus.magnifyingglass" : "plus.magnifyingglass")
-                                    .font(.title2)
-                                    .foregroundStyle(.secondary)
-                                    .padding(12)
-                            }
-                            .glassEffect(.regular.interactive(), in: .circle)
-                            
-                            // Horizontal zoom slider (shows when toggled)
-                            if showZoomSlider {
-                                HStack(spacing: 15) {
-                                    Image(systemName: "minus")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    
-                                    Slider(value: $zoomLevel, in: 1.0...5.0, step: 0.1)
-                                        .tint(.white)
-                                        .frame(maxWidth: 200)
-                                    
-                                    Image(systemName: "plus")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    
-                                    Text("\(String(format: "%.1f", zoomLevel))x")
-                                        .font(.caption)
+                                        HStack {
+                                            Image(systemName: "doc.on.doc")
+                                                .font(.body)
+                                            Text("Copy")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                        }
                                         .foregroundStyle(.primary)
-                                        .frame(width: 35)
-                                }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .glassEffect(.regular, in: .capsule)
-                                .transition(.scale.combined(with: .opacity))
-                            }
-                            
-                            Spacer()
-                        }
-                    }
-                    .onAppear {
-                        updateScanRegion(geometry: geometry)
-                    }
-                    .onChange(of: geometry.size) { oldSize, newSize in
-                        updateScanRegion(geometry: geometry)
-                    }
-                }
-                .edgesIgnoringSafeArea(.all)
-                
-                VStack {
-                    Spacer()
-                    
-                    // Floating action pills (show automatically when text is detected)
-                    if let item = displayedItem {
-                        VStack(alignment: .leading, spacing: 12) {
-                            // If the detected item is an amount, show tip options; otherwise show default actions
-                            if item.type == .amount {
-                                // +18% button
-                                Button(action: {
-                                    if let base = item.amount {
-                                        handleTipSelection(base: base, percent: 18)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
                                     }
-                                }) {
-                                    HStack {
-                                        Image(systemName: "dollarsign")
-                                            .font(.body)
-                                        Text("Tip 18%")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                    }
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
-                                }
-                                .glassEffect(.clear.interactive(), in: .capsule)
-                                .opacity(showPill1 ? 1 : 0)
-                                .scaleEffect(showPill1 ? 1 : 0.8)
-                                .animation(.easeOut(duration: 0.3), value: showPill1)
-                                
-                                // +20% button
-                                Button(action: {
-                                    if let base = item.amount {
-                                        handleTipSelection(base: base, percent: 20)
-                                    }
-                                }) {
-                                    HStack {
-                                        Image(systemName: "dollarsign")
-                                            .font(.body)
-                                        Text("Tip 20%")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                    }
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
-                                }
-                                .glassEffect(.clear.interactive(), in: .capsule)
-                                .opacity(showPill2 ? 1 : 0)
-                                .scaleEffect(showPill2 ? 1 : 0.8)
-                                .animation(.easeOut(duration: 0.3), value: showPill2)
-                                
-                                // Custom tip button
-                                Button(action: {
-                                    if let base = item.amount {
-                                        promptForTipPercentage { percent in
-                                            guard let percent = percent else { return }
-                                            handleTipSelection(base: base, percent: percent)
+                                    .glassEffect(.clear.interactive(), in: .capsule)
+                                    .opacity(showPill2 ? 1 : 0)
+                                    .scaleEffect(showPill2 ? 1 : 0.8)
+                                    .animation(.easeOut(duration: 0.3), value: showPill2)
+                                    
+                                    // Share button
+                                    Button(action: {
+                                        shareItem(item)
+                                        clearDetection()
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "square.and.arrow.up")
+                                                .font(.body)
+                                            Text("Share")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
                                         }
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
                                     }
-                                }) {
-                                    HStack {
-                                        Image(systemName: "dollarsign")
-                                            .font(.body)
-                                        Text("Custom tip")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                    }
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
-                                }
-                                .glassEffect(.clear.interactive(), in: .capsule)
-                                .opacity(showPill3 ? 1 : 0)
-                                .scaleEffect(showPill3 ? 1 : 0.8)
-                                .animation(.easeOut(duration: 0.3), value: showPill3)
-                            } else {
-                                // Primary action button
-                                Button(action: {
-                                    if item.type == .date {
-                                        // Show event editor for dates
-                                        eventToCreate = item
-                                        showEventEditor = true
-                                    } else if item.type == .address {
-                                        // Handle address - check if user wants in-app map
-                                        if openMapsInApp {
-                                            openMapsInAppView(for: item)
-                                        } else {
-                                            openMapsExternal(for: item)
+                                    .glassEffect(.clear.interactive(), in: .capsule)
+                                    .opacity(showPill3 ? 1 : 0)
+                                    .scaleEffect(showPill3 ? 1 : 0.8)
+                                    .animation(.easeOut(duration: 0.3), value: showPill3)
+                                } else {
+                                    // +18% button
+                                    Button(action: {
+                                        if let base = item.amount {
+                                            handleTipSelection(base: base, percent: 18)
                                         }
-                                    } else {
-                                        openDetectedItem(item)
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "dollarsign")
+                                                .font(.body)
+                                            Text("Tip 18%")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                        }
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
                                     }
-                                    clearDetection()
-                                }) {
-                                    HStack {
-                                        Image(systemName: actionIcon(for: item.type))
-                                            .font(.body)
-                                        Text(actionText(for: item.type))
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
+                                    .glassEffect(.clear.interactive(), in: .capsule)
+                                    .opacity(showPill1 ? 1 : 0)
+                                    .scaleEffect(showPill1 ? 1 : 0.8)
+                                    .animation(.easeOut(duration: 0.3), value: showPill1)
+                                    
+                                    // +20% button
+                                    Button(action: {
+                                        if let base = item.amount {
+                                            handleTipSelection(base: base, percent: 20)
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "dollarsign")
+                                                .font(.body)
+                                            Text("Tip 20%")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                        }
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
                                     }
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
+                                    .glassEffect(.clear.interactive(), in: .capsule)
+                                    .opacity(showPill2 ? 1 : 0)
+                                    .scaleEffect(showPill2 ? 1 : 0.8)
+                                    .animation(.easeOut(duration: 0.3), value: showPill2)
+                                    
+                                    // Custom tip button
+                                    Button(action: {
+                                        if let base = item.amount {
+                                            promptForTipPercentage { percent in
+                                                guard let percent = percent else { return }
+                                                handleTipSelection(base: base, percent: percent)
+                                            }
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "dollarsign")
+                                                .font(.body)
+                                            Text("Custom tip")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                        }
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                    }
+                                    .glassEffect(.clear.interactive(), in: .capsule)
+                                    .opacity(showPill3 ? 1 : 0)
+                                    .scaleEffect(showPill3 ? 1 : 0.8)
+                                    .animation(.easeOut(duration: 0.3), value: showPill3)
                                 }
-                                .glassEffect(.clear.interactive(), in: .capsule)
-                                .opacity(showPill1 ? 1 : 0)
-                                .scaleEffect(showPill1 ? 1 : 0.8)
-                                .animation(.easeOut(duration: 0.3), value: showPill1)
-                                
-                                // Copy button
-                                Button(action: {
-                                    UIPasteboard.general.string = item.text
-                                    let generator = UINotificationFeedbackGenerator()
-                                    generator.notificationOccurred(.success)
-                                    clearDetection()
-                                }) {
-                                    HStack {
-                                        Image(systemName: "doc.on.doc")
-                                            .font(.body)
-                                        Text("Copy")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                    }
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+                            .padding(.bottom, 12)
+                            .onAppear {
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                                    showPill1 = true
                                 }
-                                .glassEffect(.clear.interactive(), in: .capsule)
-                                .opacity(showPill2 ? 1 : 0)
-                                .scaleEffect(showPill2 ? 1 : 0.8)
-                                .animation(.easeOut(duration: 0.3), value: showPill2)
-                                
-                                // Share button
-                                Button(action: {
-                                    shareItem(item)
-                                    clearDetection()
-                                }) {
-                                    HStack {
-                                        Image(systemName: "square.and.arrow.up")
-                                            .font(.body)
-                                        Text("Share")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                    }
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 12)
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.05)) {
+                                    showPill2 = true
                                 }
-                                .glassEffect(.clear.interactive(), in: .capsule)
-                                .opacity(showPill3 ? 1 : 0)
-                                .scaleEffect(showPill3 ? 1 : 0.8)
-                                .animation(.easeOut(duration: 0.3), value: showPill3)
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.1)) {
+                                    showPill3 = true
+                                }
+                            }
+                            .onDisappear {
+                                showPill1 = false
+                                showPill2 = false
+                                showPill3 = false
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal)
-                        .padding(.bottom, 12)
-                        .onAppear {
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
-                                showPill1 = true
-                            }
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.05)) {
-                                showPill2 = true
-                            }
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.1)) {
-                                showPill3 = true
-                            }
-                        }
-                        .onDisappear {
-                            showPill1 = false
-                            showPill2 = false
-                            showPill3 = false
-                        }
-                    }
-                    
-                    // Display detected data at the bottom with liquid glass effect
-                    if let item = lastDetectedItem {
+                        
+                        // Display detected data at the bottom with liquid glass effect.
+                        // Kept as a single stable view (not an if/else swap) so the glassEffect
+                        // capsule is never torn down and remounted, which was replaying its
+                        // entrance animation and looking like the pill was popping in size.
                         HStack {
-                            Image(systemName: item.type.icon)
+                            Image(systemName: bottomBarIcon)
                                 .font(.title3)
                                 .foregroundStyle(.primary)
-                            
-                            Text(item.type == .amount ? item.text : item.text.lowercased())
+                                .opacity(lastDetectedItem != nil ? 1 : 0.7)
+
+                            Text(bottomBarText)
                                 .font(.subheadline)
                                 .foregroundStyle(.primary)
-                                .lineLimit(2)
+                                .opacity(lastDetectedItem != nil ? 1 : 0.7)
+                                .lineLimit(1)
                                 .truncationMode(.tail)
-                            
+
                             Spacer()
                         }
                         .padding(.horizontal, 20)
@@ -486,8 +442,9 @@ struct ContentView: View {
                         .background(
                             Capsule()
                                 .strokeBorder(.primary.opacity(0.3), lineWidth: 1.5)
+                                .opacity(lastDetectedItem != nil ? 1 : 0)
                         )
-                        .glassEffect(.regular.interactive(), in: .capsule)
+                        .background(.regularMaterial, in: Capsule())
                         .background(
                             Capsule()
                                 .fill(
@@ -506,7 +463,7 @@ struct ContentView: View {
                                     )
                                 )
                                 .blur(radius: 8)
-                                .opacity(rainbowGlowOpacity)
+                                .opacity(lastDetectedItem != nil ? rainbowGlowOpacity : 0)
                                 .padding(-8)
                                 .animation(.easeInOut(duration: 0.5), value: rainbowGlowOpacity)
                         )
@@ -517,123 +474,147 @@ struct ContentView: View {
                             }
                         }
                         .padding(.horizontal)
-                        .padding(.bottom, 30)
-                    } else {
-                        HStack {
-                            Image(systemName: "text.viewfinder")
-                                .font(.title3)
-                                .foregroundStyle(.primary.opacity(0.7))
-                            
-                            Text(filteredData)
-                                .font(.subheadline)
-                                .foregroundStyle(.primary.opacity(0.7))
-                                .lineLimit(1)
-                            
-                            Spacer()
+                        .padding(.bottom, 30).ignoresSafeArea()
+                    }
+                } else {
+                    VStack(spacing: 20) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.tint)
+                        
+                        Text("Camera access is required")
+                            .font(.headline)
+                        
+                        Text("Please grant camera permission to detect text")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Button("Request Permission") {
+                            requestCameraPermission()
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .glassEffect(.regular, in: .capsule)
-                        .padding(.horizontal)
-                        .padding(.bottom, 30)
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding()
+                }
+            }.navigationTitle("Place Text Within Frame").navigationBarTitleDisplayMode(.inline).toolbar {
+//                ToolbarItem {
+//                    Button(action: {}) {
+//                        HStack {
+//                            Text("Place Text Within Frame").bold().font(.callout).padding()
+//                        }
+//                    }
+//                   
+//                }
+                
+                ToolbarSpacer(.fixed)
+                
+                ToolbarItem {
+                    Button(action: {
+                        isHistoryVisible.toggle()
+                    }) {
+                        Image(systemName: "clock")
+                            .font(.title3)
+                            .foregroundStyle(.primary)
+                
+                    }
+
+                }
+                
+                ToolbarItem {
+                    Button(action: {
+                        isSettingsVisible.toggle()
+                    }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.title3)
+                            .foregroundStyle(.primary)
                     }
                 }
-            } else {
-                VStack(spacing: 20) {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.tint)
-                    
-                    Text("Camera access is required")
-                        .font(.headline)
-                    
-                    Text("Please grant camera permission to detect text")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    
-                    Button("Request Permission") {
-                        requestCameraPermission()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding()
             }
-        }
-        .onAppear {
-            checkCameraPermission()
-            
-            // TEMPORARY: Reset What's New for testing - REMOVE BEFORE RELEASE
-            #if DEBUG
-            AppVersionManager.shared.resetWhatsNewPrompt()
-            print("🔄 DEBUG: Reset What's New prompt for testing")
-            #endif
-            
-            // Check if we should show What's New
-            if AppVersionManager.shared.shouldShowWhatsNew() {
-                // Delay slightly to ensure the camera view is ready
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    showWhatsNew = false
-                    AppVersionManager.shared.markWhatsNewAsShown()
+            .onAppear {
+                checkCameraPermission()
+                
+                // TEMPORARY: Reset What's New for testing - REMOVE BEFORE RELEASE
+                #if DEBUG
+                AppVersionManager.shared.resetWhatsNewPrompt()
+                print("🔄 DEBUG: Reset What's New prompt for testing")
+                #endif
+                
+                // Check if we should show What's New
+//                if AppVersionManager.shared.shouldShowWhatsNew() {
+//                    // Delay slightly to ensure the camera view is ready
+//                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+//                        showWhatsNew = false
+//                        AppVersionManager.shared.markWhatsNewAsShown()
+//                    }
+//                }
+            }
+            .fullScreenCover(isPresented: $showWhatsNew) {
+                WhatsNewView()
+            }
+            .sheet(isPresented: $showEventEditor, onDismiss: {
+                // Clear the event to create after dismissing
+                eventToCreate = nil
+            }) {
+                if let event = eventToCreate {
+                    EventEditView(event: event, isPresented: $showEventEditor)
                 }
             }
-        }
-        .fullScreenCover(isPresented: $showWhatsNew) {
-            WhatsNewView()
-        }
-        .sheet(isPresented: $showEventEditor, onDismiss: {
-            // Clear the event to create after dismissing
-            eventToCreate = nil
-        }) {
-            if let event = eventToCreate {
-                EventEditView(event: event, isPresented: $showEventEditor)
+            .onChange(of: showEventEditor) { oldValue, newValue in
+                isCameraPaused = newValue
             }
-        }
-        .onChange(of: showEventEditor) { oldValue, newValue in
-            isCameraPaused = newValue
-        }
-        .fullScreenCover(isPresented: $isSettingsVisible) {
-            SettingsView()
-        }
-        .onChange(of: isSettingsVisible) { oldValue, newValue in
-            isCameraPaused = newValue
-        }
-        .sheet(isPresented: $showSafari) {
-            if let url = safariURL {
-                SafariView(url: url)
+            .fullScreenCover(isPresented: $isSettingsVisible) {
+                SettingsView()
             }
-        }
-        .onChange(of: showSafari) { oldValue, newValue in
-            isCameraPaused = newValue
-        }
-        .sheet(isPresented: $showMap) {
-            if let item = mapItem {
-                MapView(mapItem: item)
+            .onChange(of: isSettingsVisible) { oldValue, newValue in
+                isCameraPaused = newValue
             }
-        }
-        .onChange(of: showMap) { oldValue, newValue in
-            isCameraPaused = newValue
-        }
-        .sheet(isPresented: $showMailComposer) {
-            if let recipient = mailRecipient {
-                MailComposerView(recipient: recipient)
+            .sheet(isPresented: $showSafari) {
+                if let url = safariURL {
+                    SafariView(url: url)
+                }
             }
-        }
-        .onChange(of: showMailComposer) { oldValue, newValue in
-            isCameraPaused = newValue
-        }
-        .sheet(isPresented: $isHistoryVisible) {
-            HistoryView(
-                openUrlsInApp: openUrlsInApp,
-                openMapsInApp: openMapsInApp,
-                openMailInApp: openMailInApp
-            )
-        }
-        .onChange(of: isHistoryVisible) { oldValue, newValue in
-            isCameraPaused = newValue
+            .onChange(of: showSafari) { oldValue, newValue in
+                isCameraPaused = newValue
+            }
+            .sheet(isPresented: $showMap) {
+                if let item = mapItem {
+                    MapView(mapItem: item)
+                }
+            }
+            .onChange(of: showMap) { oldValue, newValue in
+                isCameraPaused = newValue
+            }
+            .sheet(isPresented: $showMailComposer) {
+                if let recipient = mailRecipient {
+                    MailComposerView(recipient: recipient)
+                }
+            }
+            .onChange(of: showMailComposer) { oldValue, newValue in
+                isCameraPaused = newValue
+            }
+            .sheet(isPresented: $isHistoryVisible) {
+                HistoryView(
+                    openUrlsInApp: openUrlsInApp,
+                    openMapsInApp: openMapsInApp,
+                    openMailInApp: openMailInApp
+                )
+            }
+            .onChange(of: isHistoryVisible) { oldValue, newValue in
+                isCameraPaused = newValue
+            }
         }
     }
     
+    private var bottomBarIcon: String {
+        lastDetectedItem?.type.icon ?? "text.viewfinder"
+    }
+
+    private var bottomBarText: String {
+        guard let item = lastDetectedItem else { return filteredData }
+        return item.type == .amount ? item.text : item.text.lowercased()
+    }
+
     private func actionText(for type: DetectedItem.DetectedType) -> String {
         switch type {
             case .website: return "Open in Safari"
@@ -668,10 +649,14 @@ struct ContentView: View {
         }
     }
     
-    // Detect first plausible currency/amount in text
-    private func firstAmount(in text: String) -> Decimal? {
-        // Matches optional $ then digits with optional decimal part, conservative to reduce false positives
-        let pattern = #"(?<!\S)\$?\d{1,5}(?:[\.,]\d{2})?(?!\S)"#
+    // Detect first plausible currency/amount in text.
+    // When the text also looks like an address (e.g. "123 Main St"), require an explicit
+    // "$" so a street number isn't mistaken for a dollar amount.
+    private func firstAmount(in text: String, requireDollarSign: Bool = false) -> Decimal? {
+        // Matches digits with optional decimal part, conservative to reduce false positives
+        let pattern = requireDollarSign
+            ? #"(?<!\S)\$\d{1,5}(?:[\.,]\d{2})?(?!\S)"#
+            : #"(?<!\S)\$?\d{1,5}(?:[\.,]\d{2})?(?!\S)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         guard let match = regex.firstMatch(in: text, options: [], range: range),
@@ -778,16 +763,30 @@ struct ContentView: View {
     
     private func filterImportantData(from text: String) {
         guard !text.isEmpty else {
-            filteredData = "Point camera at text..."
-            // Fully clear detection state when no text is detected (user panned away)
-            lastProcessedText = ""
-            lastDetectedItem = nil
-            displayedItem = nil
+            filteredData = "No data detected"
+            // Debounce clearing so a single missed OCR frame doesn't flicker the bottom bar
+            emptyTextClearTimer?.invalidate()
+            emptyTextClearTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                DispatchQueue.main.async {
+                    lastProcessedText = ""
+                    lastDetectedItem = nil
+                    displayedItem = nil
+                }
+            }
             return
         }
-        
-        // PRIORITY: Try to detect a monetary amount first, regardless of other matches
-        if let amount = firstAmount(in: text) {
+
+        emptyTextClearTimer?.invalidate()
+        emptyTextClearTimer = nil
+
+        let range = NSRange(text.startIndex..., in: text)
+        let matches = dataDetector.matches(in: text, options: [], range: range)
+        let looksLikeAddress = matches.contains { $0.resultType == .address }
+
+        // PRIORITY: Try to detect a monetary amount first, regardless of other matches.
+        // If the text also looks like an address, only trust an explicit "$" so a street
+        // number (e.g. the "123" in "123 Main St") isn't mistaken for a dollar amount.
+        if let amount = firstAmount(in: text, requireDollarSign: looksLikeAddress) {
             let formatted = formatCurrency(amount)
 
             // Skip if we just processed this exact amount AND still have it displayed
@@ -838,22 +837,24 @@ struct ContentView: View {
                     // Clear bottom bar and displayed state so new numbers can trigger pills again
                     lastDetectedItem = nil
                     displayedItem = nil
-                    filteredData = "Point camera at text..."
+                    filteredData = "No data detected"
                 }
             }
 
             return
         }
-        
-        let range = NSRange(text.startIndex..., in: text)
-        let matches = dataDetector.matches(in: text, options: [], range: range)
-        
+
         if matches.isEmpty {
             filteredData = "No data detected"
-            // Clear state so new detections can show pills
-            lastProcessedText = ""
-            lastDetectedItem = nil
-            displayedItem = nil
+            // Debounce clearing so a single noisy/misread OCR frame doesn't flicker the bottom bar
+            emptyTextClearTimer?.invalidate()
+            emptyTextClearTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                DispatchQueue.main.async {
+                    lastProcessedText = ""
+                    lastDetectedItem = nil
+                    displayedItem = nil
+                }
+            }
             return
         }
         
@@ -955,7 +956,7 @@ struct ContentView: View {
                         // Clear bottom bar and displayed item so new detections can trigger pills again
                         lastDetectedItem = nil
                         displayedItem = nil
-                        filteredData = "Point camera at text..."
+                        filteredData = "No data detected"
                     }
                 }
             }
@@ -1071,7 +1072,7 @@ struct ContentView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             lastDetectedItem = nil
             displayedItem = nil
-            filteredData = "Point camera at text..."
+            filteredData = "No data detected "
         }
     }
     
