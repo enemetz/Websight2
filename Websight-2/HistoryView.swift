@@ -33,6 +33,9 @@ struct HistoryView: View {
     @State private var showTipSheet = false
     @State private var tipBaseAmount: Decimal?
     @State private var tipResultText: String?
+    @AppStorage("convertCurrencyFrom") private var fromCurrency: String = "USD"
+    @AppStorage("convertCurrencyTo") private var toCurrency: String = "EUR"
+    @State private var convertResultText: String?
     
     private enum ActiveSheet: Identifiable {
         case safari(URL)
@@ -65,7 +68,8 @@ struct HistoryView: View {
                             isLoading: isLoading,
                             onAction: { actOnItem(item) },
                             onCopy: { copyItem(item) },
-                            onShare: { shareItem(item) }
+                            onShare: { shareItem(item) },
+                            onConvert: { convertItem(item) }
                         )
                     }
                 }
@@ -111,6 +115,14 @@ struct HistoryView: View {
                 )
                 .presentationDetents([.fraction(0.4), .medium, .large])
                 .presentationDragIndicator(.visible)
+            }
+            .alert("Conversion", isPresented: Binding(
+                get: { convertResultText != nil },
+                set: { if !$0 { convertResultText = nil } }
+            )) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(convertResultText ?? "")
             }
             .overlay {
                 loadingOverlay
@@ -383,6 +395,33 @@ struct HistoryView: View {
         activeSheet = .share(item.text)
     }
     
+    private func convertItem(_ item: History) {
+        guard let base = firstAmount(in: item.text) else {
+            convertResultText = "Couldn't read an amount"
+            return
+        }
+        Task {
+            do {
+                guard let quote = try await CurrencyService().getRate(from: fromCurrency, to: toCurrency) else {
+                    convertResultText = "No rate available for \(fromCurrency) to \(toCurrency)"
+                    return
+                }
+                let converted = base * Decimal(quote.rate)
+                convertResultText = "\(formatCurrency(base, code: fromCurrency)) = \(formatCurrency(converted, code: toCurrency))"
+            } catch {
+                convertResultText = "Conversion failed"
+            }
+        }
+    }
+
+    private func formatCurrency(_ amount: Decimal, code: String) -> String {
+        let nf = NumberFormatter()
+        nf.numberStyle = .currency
+        nf.currencyCode = code
+        nf.locale = .current
+        return nf.string(from: amount as NSDecimalNumber) ?? "\(amount) \(code)"
+    }
+    
     private func addToCalendar(text: String) {
         let store = EKEventStore()
         
@@ -571,7 +610,8 @@ struct HistoryItemRow: View {
     let onAction: () -> Void
     let onCopy: () -> Void
     let onShare: () -> Void
-    
+    let onConvert: () -> Void
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Main content
@@ -601,6 +641,9 @@ struct HistoryItemRow: View {
             // Action buttons row
             HStack(spacing: 8) {
                 primaryActionButton
+                if item.type.lowercased() == "amount" {
+                    convertButton
+                }
                 copyButton
                 shareButton
             }
@@ -645,6 +688,19 @@ struct HistoryItemRow: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: pressedButtonId)
     }
     
+    private var convertButton: some View {
+        Button(action: onConvert) {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 50, height: 44)
+        }
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .tint(.mint)
+        .buttonStyle(LiquidGlassButtonStyle(id: "convert-\(item.id)", pressedId: $pressedButtonId))
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: pressedButtonId)
+    }
+
     private var copyButton: some View {
         Button(action: onCopy) {
             let isCopyPressed = pressedButtonId == "copy-\(item.id)"

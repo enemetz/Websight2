@@ -12,6 +12,9 @@ struct SettingsView: View {
     @AppStorage("openUrlsInApp") private var openUrlsInApp: Bool = false
     @AppStorage("openMapsInApp") private var openMapsInApp: Bool = false
     @AppStorage("openMailInApp") private var openMailInApp: Bool = false
+    @AppStorage("convertCurrencyFrom") private var fromCurrency: String = "USD"
+    @AppStorage("convertCurrencyTo") private var toCurrency: String = "EUR"
+    @Environment(CurrencyStore.self) private var store
     
     
     var body: some View {
@@ -21,6 +24,20 @@ struct SettingsView: View {
                     Toggle("Open URLs in App", isOn: $openUrlsInApp)
                     Toggle("Open Maps in App", isOn: $openMapsInApp)
                     Toggle("Open Mail in App", isOn: $openMailInApp)
+                }
+                
+                Section(header: Text("Currency Settings")) {
+                    Picker("From", selection: $fromCurrency) {
+                        ForEach(store.currencies) { currency in
+                            Text("\(currency.isoCode)").tag(currency.isoCode)
+                        }
+                    }
+                    
+                    Picker("To", selection: $toCurrency) {
+                        ForEach(store.currencies) { currency in
+                            Text("\(currency.isoCode)").tag(currency.isoCode)
+                        }
+                    }
                 }
             }
             .navigationTitle("Settings")

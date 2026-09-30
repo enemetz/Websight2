@@ -39,6 +39,7 @@ struct ContentView: View {
     @State private var showPill1 = false
     @State private var showPill2 = false
     @State private var showPill3 = false
+    @State private var showPill4 = false
     @State private var displayedItem: DetectedItem? = nil // Separate state for display
     @State private var isSettingsVisible = false
     @State private var isHistoryVisible = false
@@ -50,6 +51,9 @@ struct ContentView: View {
     @State private var mailRecipient: String?
     @State private var isCameraPaused = false
     @State private var showWhatsNew = false
+    private let service = CurrencyService()
+    @AppStorage("convertCurrencyFrom") private var fromCurrency: String = "USD"
+    @AppStorage("convertCurrencyTo") private var toCurrency: String = "EUR"
     
     @Environment(\.modelContext) private var modelContext
     
@@ -395,6 +399,33 @@ struct ContentView: View {
                                     .opacity(showPill3 ? 1 : 0)
                                     .scaleEffect(showPill3 ? 1 : 0.8)
                                     .animation(.easeOut(duration: 0.3), value: showPill3)
+                                    
+                                    Button(action: {
+                                        guard let base = item.amount else { return }
+                                        Task {
+                                            do {
+                                                guard let quote = try await service.getRate(from: fromCurrency, to: toCurrency) else { return }
+                                                let converted = base * Decimal(quote.rate)
+                                                handleCurrencyConversion(from: fromCurrency, to: toCurrency, converted: converted)
+                                            } catch {
+                                                print("Conversion failed: \(error)")
+                                            }
+                                        }}) {
+                                        HStack {
+                                            Image(systemName: "dollarsign")
+                                                .font(.body)
+                                            Text("Convert")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                        }
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 12)
+                                    }
+                                    .glassEffect(.clear.interactive(), in: .capsule)
+                                    .opacity(showPill4 ? 1 : 0)
+                                    .scaleEffect(showPill4 ? 1 : 0.8)
+                                    .animation(.easeOut(duration: 0.3), value: showPill4)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -409,6 +440,9 @@ struct ContentView: View {
                                 }
                                 withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.1)) {
                                     showPill3 = true
+                                }
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.1)) {
+                                    showPill4 = true
                                 }
                             }
                             .onDisappear {
@@ -736,6 +770,42 @@ struct ContentView: View {
 
         // Keep the summary visible a bit longer; it will still be cleared by filterImportantData on next input
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { /* no-op */ }
+
+        // Haptic feedback
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+    
+    private func handleCurrencyConversion(from: String, to: String, converted: Decimal) {
+        // Cancel any existing timers tied to detection animations
+        
+        let summary = "From \(from) to \(to): \(converted.formatted(.currency(code: "\(to)")))"
+        detectionTimer?.invalidate()
+        detectionTimer = nil
+
+        // Hide the pills gracefully but keep the bottom bar summary
+        withAnimation(.easeOut(duration: 0.3).delay(0.03)) {
+            showPill4 = false
+            rainbowGlowOpacity = 0.0
+        }
+        
+        withAnimation(.easeOut(duration: 0.3)) {
+            showPill3 = false
+            rainbowGlowOpacity = 0.0
+        }
+        withAnimation(.easeOut(duration: 0.3).delay(0.05)) {
+            showPill2 = false
+        }
+        withAnimation(.easeOut(duration: 0.3).delay(0.1)) {
+            showPill1 = false
+        }
+
+        // Show the computed summary in the bottom bar and keep it until new detection arrives
+        lastDetectedItem = DetectedItem(text: summary, type: .amount, url: nil, date: nil, addressComponents: nil, amount: nil)
+        displayedItem = nil
+
+        // Keep the summary visible a bit longer; it will still be cleared by filterImportantData on next input
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { /* no-op */ }
 
         // Haptic feedback
         let generator = UINotificationFeedbackGenerator()
