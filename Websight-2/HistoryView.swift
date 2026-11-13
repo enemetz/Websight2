@@ -452,16 +452,21 @@ struct HistoryView: View {
     }
     
     private func firstAmount(in text: String) -> Decimal? {
-        let pattern = #"(?<!\S)\$?\d{1,6}(?:[\.,]\d{2})?(?!\S)"#
+        // Either comma-grouped thousands ("$2,500.00") or a plain number with an
+        // optional 2-digit decimal part using "." or ",".
+        let pattern = #"(?<!\S)\$?(?:\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d{1,6}(?:[\.,]\d{2})?)(?!\S)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         guard let match = regex.firstMatch(in: text, options: [], range: range),
               let r = Range(match.range, in: text) else { return nil }
         var raw = String(text[r])
         raw = raw.replacingOccurrences(of: "$", with: "")
-                 .replacingOccurrences(of: ",", with: "")
                  .trimmingCharacters(in: .whitespacesAndNewlines)
-        raw = raw.replacingOccurrences(of: ",", with: ".")
+        if raw.range(of: #"^\d{1,3}(,\d{3})+(\.\d+)?$"#, options: .regularExpression) != nil {
+            raw = raw.replacingOccurrences(of: ",", with: "")
+        } else {
+            raw = raw.replacingOccurrences(of: ",", with: ".")
+        }
         return Decimal(string: raw)
     }
 

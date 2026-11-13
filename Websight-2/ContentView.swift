@@ -644,22 +644,29 @@ struct ContentView: View {
     // "$" so a street number isn't mistaken for a dollar amount.
     private func firstAmount(in text: String, requireDollarSign: Bool = false) -> Decimal? {
         // Matches digits with optional decimal part, conservative to reduce false positives
+        // Either comma-grouped thousands ("2,500", "1,250,000.00") or a plain number with an
+        // optional 2-digit decimal part using "." or "," ("12.50", "12,50").
+        let number = #"(?:\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d{1,5}(?:[\.,]\d{2})?)"#
         let pattern = requireDollarSign
-            ? #"(?<!\S)\$\d{1,5}(?:[\.,]\d{2})?(?!\S)"#
-            : #"(?<!\S)\$?\d{1,5}(?:[\.,]\d{2})?(?!\S)"#
+            ? #"(?<!\S)\$"# + number + #"(?!\S)"#
+            : #"(?<!\S)\$?"# + number + #"(?!\S)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         guard let match = regex.firstMatch(in: text, options: [], range: range),
               let r = Range(match.range, in: text) else { return nil }
-        
+
         var raw = String(text[r])
         raw = raw.replacingOccurrences(of: "$", with: "")
-                 .replacingOccurrences(of: ",", with: "")
                  .trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Normalize decimal separator to dot
-        raw = raw.replacingOccurrences(of: ",", with: ".")
-        
+
+        if raw.range(of: #"^\d{1,3}(,\d{3})+(\.\d+)?$"#, options: .regularExpression) != nil {
+            // Commas are thousands separators
+            raw = raw.replacingOccurrences(of: ",", with: "")
+        } else {
+            // A lone comma is a decimal separator
+            raw = raw.replacingOccurrences(of: ",", with: ".")
+        }
+
         return Decimal(string: raw)
     }
     
