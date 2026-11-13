@@ -314,10 +314,10 @@ struct HistoryView: View {
                 guard let request = MKGeocodingRequest(addressString: item.text) else {
                     throw NSError(domain: "GeocodingError", code: 1, userInfo: nil)
                 }
-                
+
                 // Perform geocoding off the main thread
                 let mapItems = try await request.mapItems
-                
+
                 if let firstItem = mapItems.first {
                     await MainActor.run {
                         self.isLoading = false
@@ -342,7 +342,7 @@ struct HistoryView: View {
             }
         }
     }
-    
+
     private func openMapsExternal(for item: History) {
         Task {
             await MainActor.run {

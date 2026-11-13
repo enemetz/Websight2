@@ -995,7 +995,7 @@ struct ContentView: View {
                         let mkPlacemark = MKPlacemark(placemark: placemark)
                         let mkMapItem = MKMapItem(placemark: mkPlacemark)
                         mkMapItem.name = item.text
-                        
+
                         // Show in-app map
                         mapItem = mkMapItem
                         showMap = true
