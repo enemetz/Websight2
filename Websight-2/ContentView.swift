@@ -52,6 +52,7 @@ struct ContentView: View {
     @State private var showWhatsNew = false
     
     @Environment(\.modelContext) private var modelContext
+    @State private var hasVerticalBar = false
     
     
     // Data detector for URLs, emails, phone numbers, addresses, and dates
@@ -474,7 +475,7 @@ struct ContentView: View {
                             }
                         }
                         .padding(.horizontal)
-                        .padding(.bottom, 30).ignoresSafeArea()
+                        .padding(.bottom, 30)
                     }
                 } else {
                     VStack(spacing: 20) {
@@ -497,39 +498,9 @@ struct ContentView: View {
                     }
                     .padding()
                 }
-            }.navigationTitle("Place Text Within Frame").navigationBarTitleDisplayMode(.inline).toolbar {
-//                ToolbarItem {
-//                    Button(action: {}) {
-//                        HStack {
-//                            Text("Place Text Within Frame").bold().font(.callout).padding()
-//                        }
-//                    }
-//                   
-//                }
-                
-                ToolbarSpacer(.fixed)
-                
-                ToolbarItem {
-                    Button(action: {
-                        isHistoryVisible.toggle()
-                    }) {
-                        Image(systemName: "clock")
-                            .font(.title3)
-                            .foregroundStyle(.primary)
-                
-                    }
-
-                }
-                
-                ToolbarItem {
-                    Button(action: {
-                        isSettingsVisible.toggle()
-                    }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title3)
-                            .foregroundStyle(.primary)
-                    }
-                }
+            }
+        .detectVerticalBar($hasVerticalBar).navigationTitle("Place Text Within Frame").navigationBarTitleDisplayMode(.inline).toolbar {
+                mainToolbar
             }
             .onAppear {
                 checkCameraPermission()
@@ -609,6 +580,25 @@ struct ContentView: View {
     private var bottomBarIcon: String {
         lastDetectedItem?.type.icon ?? "text.viewfinder"
     }
+    
+    @ToolbarContentBuilder
+    private var mainToolbar: some ToolbarContent {
+        ToolbarItem(placement: ToolbarLayout.placement(hasVerticalBar: hasVerticalBar)) {
+            Button { isHistoryVisible.toggle() } label: {
+                Image(systemName: "clock").font(.title3).foregroundStyle(.primary)
+            }.padding(6)
+        }
+        
+        
+        ToolbarItem(placement: ToolbarLayout.placement(hasVerticalBar: hasVerticalBar)) {
+            Button { isSettingsVisible.toggle() } label: {
+                Image(systemName: "gearshape.fill").font(.title3).foregroundStyle(.primary)
+            }.padding(6)
+        }
+        
+        
+    }
+    
 
     private var bottomBarText: String {
         guard let item = lastDetectedItem else { return filteredData }
@@ -1535,6 +1525,40 @@ extension ContentView.DetectedItem.DetectedType {
         case .address: return "address"
         case .date: return "date"
         case .amount: return "amount"
+        }
+    }
+}
+
+extension ToolbarContent {
+    @ToolbarContentBuilder
+    func horizontalOnlyIfAvailable() -> some ToolbarContent {
+        if #available(iOS 27.1, *) {
+            self.axisBehavior(.horizontalOnly)
+        } else {
+            self
+        }
+    }
+}
+
+@available(iOS 27.1, *)
+private struct VerticalEdgeReader: ViewModifier {
+    @Environment(\.toolbarVerticalEdge) private var edge
+    @Binding var hasVerticalBar: Bool
+
+    func body(content: Content) -> some View {
+        content.onChange(of: edge, initial: true) { _, new in
+            hasVerticalBar = ToolbarLayout.hasVerticalBar(edge: new)
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func detectVerticalBar(_ hasVerticalBar: Binding<Bool>) -> some View {
+        if #available(iOS 27.1, *) {
+            modifier(VerticalEdgeReader(hasVerticalBar: hasVerticalBar))
+        } else {
+            self
         }
     }
 }

@@ -109,7 +109,7 @@ struct HistoryView: View {
                         }
                     }
                 )
-                .presentationDetents([.fraction(0.4), .medium, .large])
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
             .overlay {
@@ -475,7 +475,7 @@ struct HistoryView: View {
     private func tipSummary(base: Decimal, percent: Decimal) -> String {
         let tip = (base * percent) / 100
         let total = base + tip
-        return "\(formatCurrency(base)) + \(formatCurrency(tip)) = \(formatCurrency(total))"
+        return "\(formatCurrency(base)) amount + \(formatCurrency(tip)) tip = \(formatCurrency(total))"
     }
 }
 
@@ -490,25 +490,28 @@ struct TipCalculatorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Calculate Tip")
-                    .font(.title2).padding(.top, 5)
-                Spacer()
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title)
-                        .foregroundStyle(.white).glassEffect()
-                }.padding()
-            }
-            
-            Divider()
+        NavigationStack {
+            content
+                .navigationTitle("Calculate Tip")
+                .navigationBarTitleDisplayMode(.automatic)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(role: .close) {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+    }
 
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if let base = baseAmount {
                 Text("Bill: \(formatCurrency(base))")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
+                Divider()
                 Text("Enter or select a tip to see the total")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -545,14 +548,13 @@ struct TipCalculatorSheet: View {
             if let result = resultText {
                 Divider()
                 Text(result)
-                    .font(.subheadline)
+                    .font(.body)
                     .fontWeight(.semibold)
             }
 
             Spacer(minLength: 0)
         }
         .padding(16)
-        .presentationDragIndicator(.visible)
     }
 
     private func formatCurrency(_ amount: Decimal) -> String {
