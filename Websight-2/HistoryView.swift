@@ -109,7 +109,7 @@ struct HistoryView: View {
                         }
                     }
                 )
-                .presentationDetents([.fraction(0.4), .medium, .large])
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
             .overlay {
@@ -314,10 +314,10 @@ struct HistoryView: View {
                 guard let request = MKGeocodingRequest(addressString: item.text) else {
                     throw NSError(domain: "GeocodingError", code: 1, userInfo: nil)
                 }
-                
+
                 // Perform geocoding off the main thread
                 let mapItems = try await request.mapItems
-                
+
                 if let firstItem = mapItems.first {
                     await MainActor.run {
                         self.isLoading = false
@@ -342,7 +342,7 @@ struct HistoryView: View {
             }
         }
     }
-    
+
     private func openMapsExternal(for item: History) {
         Task {
             await MainActor.run {
@@ -452,16 +452,21 @@ struct HistoryView: View {
     }
     
     private func firstAmount(in text: String) -> Decimal? {
-        let pattern = #"(?<!\S)\$?\d{1,6}(?:[\.,]\d{2})?(?!\S)"#
+        // Either comma-grouped thousands ("$2,500.00") or a plain number with an
+        // optional 2-digit decimal part using "." or ",".
+        let pattern = #"(?<!\S)\$?(?:\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d{1,6}(?:[\.,]\d{2})?)(?!\S)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         guard let match = regex.firstMatch(in: text, options: [], range: range),
               let r = Range(match.range, in: text) else { return nil }
         var raw = String(text[r])
         raw = raw.replacingOccurrences(of: "$", with: "")
-                 .replacingOccurrences(of: ",", with: "")
                  .trimmingCharacters(in: .whitespacesAndNewlines)
-        raw = raw.replacingOccurrences(of: ",", with: ".")
+        if raw.range(of: #"^\d{1,3}(,\d{3})+(\.\d+)?$"#, options: .regularExpression) != nil {
+            raw = raw.replacingOccurrences(of: ",", with: "")
+        } else {
+            raw = raw.replacingOccurrences(of: ",", with: ".")
+        }
         return Decimal(string: raw)
     }
 
@@ -475,7 +480,7 @@ struct HistoryView: View {
     private func tipSummary(base: Decimal, percent: Decimal) -> String {
         let tip = (base * percent) / 100
         let total = base + tip
-        return "\(formatCurrency(base)) + \(formatCurrency(tip)) = \(formatCurrency(total))"
+        return "\(formatCurrency(base)) amount + \(formatCurrency(tip)) tip = \(formatCurrency(total))"
     }
 }
 
@@ -490,25 +495,28 @@ struct TipCalculatorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Calculate Tip")
-                    .font(.title2).padding(.top, 5)
-                Spacer()
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title)
-                        .foregroundStyle(.white).glassEffect()
-                }.padding()
-            }
-            
-            Divider()
+        NavigationStack {
+            content
+                .navigationTitle("Calculate Tip")
+                .navigationBarTitleDisplayMode(.automatic)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(role: .close) {
+                            dismiss()
+                        }
+                    }
+                }
+        }
+    }
 
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if let base = baseAmount {
                 Text("Bill: \(formatCurrency(base))")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
+                Divider()
                 Text("Enter or select a tip to see the total")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -545,14 +553,13 @@ struct TipCalculatorSheet: View {
             if let result = resultText {
                 Divider()
                 Text(result)
-                    .font(.subheadline)
+                    .font(.body)
                     .fontWeight(.semibold)
             }
 
             Spacer(minLength: 0)
         }
         .padding(16)
-        .presentationDragIndicator(.visible)
     }
 
     private func formatCurrency(_ amount: Decimal) -> String {

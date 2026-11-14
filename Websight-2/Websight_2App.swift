@@ -10,9 +10,17 @@ import SwiftData
 
 @main
 struct Websight_2App: App {
+    let container: ModelContainer = {
+        let container = try! ModelContainer(for: History.self)
+        #if DEBUG
+        MockHistory.seedIfEmpty(container)
+        #endif
+        return container
+    }()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-        }.modelContainer(for: History.self)
+        }.modelContainer(container)
     }
 }
